@@ -528,12 +528,12 @@ double annealing(ChronoTimer &timer, int loop_max, int verbose){
 }
 
 // VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<VI,uint64_t,int>> &pushed){
-VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<uint64_t,int>> &pushed){
+VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<int,uint64_t,int>> &pushed){
     VI actions;
     auto h=last_hash;
     while(h!=init_hash){
-        // const auto &[_,next,a]=pushed.at(h);
-        const auto &[next,a]=pushed.at(h);
+        const auto &[_,next,a]=pushed.at(h);
+        // const auto &[next,a]=pushed.at(h);
         actions.emplace_back(a);
         h=next;
     }
@@ -546,8 +546,8 @@ int search(const string &output){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     // hash -> {state, prev_hash, action_id}
     // unordered_map<uint64_t, tuple<VI,uint64_t,int>> pushed;
-    // hash -> {prev_hash, action_id}
-    unordered_map<uint64_t, tuple<uint64_t,int>> pushed;
+    // hash -> {length, prev_hash, action_id}
+    unordered_map<uint64_t, tuple<int, uint64_t,int>> pushed;
     // mistake, length, hash
     MINPQ<tuple<int, int, uint64_t>> pq;
     // 保存してあるベスト解
@@ -556,10 +556,14 @@ int search(const string &output){
         current_best_size=SZ(load_actions(output));
         dump(current_best_size)
     }
+    double improve_rate=1;
+    // double improve_rate=0.3;
+    // double improve_rate=0.5;
+    // double improve_rate=0.9;
     // 
     auto init_hash = zhash.hash(initial_state);
     // pushed[init_hash]={initial_state, 0, -1};
-    pushed[init_hash]={0, -1};
+    pushed[init_hash]={0, 0, -1};
     pq.emplace(mistakes(initial_state), 0, init_hash);
     auto goal_hash = zhash.hash(solution_state);
     int searched=0;
@@ -588,26 +592,27 @@ int search(const string &output){
             }
             return length;
         }
+        if(get<0>(pushed[hash])<length) continue;
         // const auto &state=get<0>(pushed[hash]);
         auto actions=construct_actions(init_hash, hash, pushed);
         auto state=simulation(initial_state, actions);
-        if(length<current_best_size)
-        REP(a, allowed_action_num*2){
-            auto next = do_action(state, a);
-            auto next_hash = zhash.hash(next);
-            if(pushed.contains(next_hash))
-                continue;
-            // pushed[next_hash]={next, hash, a};
-            pushed[next_hash]={hash, a};
-            pq.emplace(mistakes(next), length+1, next_hash);
-            if(pq.size()%5000000==0)
-                dump(pq.size())
-            if(pushed.size()%5000000==0)
-                dump(pushed.size())
-            // // 打ち切り
-            // if(pq.size()>100000000||pushed.size()>100000000)
-            //     return INF;
-        }
+        if(length<current_best_size*improve_rate)
+            REP(a, allowed_action_num*2){
+                auto next = do_action(state, a);
+                auto next_hash = zhash.hash(next);
+                if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
+                    continue;
+                // pushed[next_hash]={next, hash, a};
+                pushed[next_hash]={length+1, hash, a};
+                pq.emplace(mistakes(next), length+1, next_hash);
+                if(pq.size()%5000000==0)
+                    dump(pq.size())
+                if(pushed.size()%5000000==0)
+                    dump(pushed.size())
+                // // 打ち切り
+                // if(pq.size()>100000000||pushed.size()>100000000)
+                //     return INF;
+            }
     }
     return INF;
 }
@@ -616,13 +621,13 @@ const string DATA_DIR = "./data/";
 int main() {
     ChronoTimer timer;
     int case_num = 398;
-    // int case_num = 1;
-    // int case_num = 10;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     REP(i, case_num){
     // FOR(i, 30, case_num){
+    // FOR(i, 284, case_num){
+    // FOR(i, 337, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
