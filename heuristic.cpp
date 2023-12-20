@@ -338,7 +338,7 @@ VI do_action(const VI& state, int action_id){
     auto s=state;
     auto &action = get_action(action_id);
     REP(i, state_length)
-        s[action[i]]=state[i];
+        s[i]=state[action[i]];
     return s;
 }
 
@@ -541,7 +541,7 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
     return actions;
 }
 // 
-int search(const string &output){
+int search(const string &output, bool strong_search, double improve_rate=1){
     // state -> hash
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     // hash -> {state, prev_hash, action_id}
@@ -556,11 +556,6 @@ int search(const string &output){
         current_best_size=SZ(load_actions(output));
         dump(current_best_size)
     }
-    double improve_rate=1;
-    // double improve_rate=0.3;
-    // double improve_rate=0.5;
-    // double improve_rate=0.9;
-    // 
     auto init_hash = zhash.hash(initial_state);
     // pushed[init_hash]={initial_state, 0, -1};
     pushed[init_hash]={0, 0, -1};
@@ -600,8 +595,13 @@ int search(const string &output){
             REP(a, allowed_action_num*2){
                 auto next = do_action(state, a);
                 auto next_hash = zhash.hash(next);
-                if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
-                    continue;
+                if(strong_search){
+                    if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
+                        continue;
+                }else{
+                    if(pushed.contains(next_hash))
+                        continue;
+                }
                 // pushed[next_hash]={next, hash, a};
                 pushed[next_hash]={length+1, hash, a};
                 pq.emplace(mistakes(next), length+1, next_hash);
@@ -617,6 +617,13 @@ int search(const string &output){
     return INF;
 }
 
+void check_answer(const string &filename){
+    auto actions=load_actions(filename);
+    auto result = simulation(initial_state, actions);
+    int mistake = mistakes(result);
+    assert(mistake<=num_wildcards);
+}
+
 const string DATA_DIR = "./data/";
 int main() {
     ChronoTimer timer;
@@ -625,21 +632,29 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     REP(i, case_num){
-    // FOR(i, 30, case_num){
+    // FOR(i, 31, case_num){
+    // RFOR(i, 0, 284){
     // FOR(i, 284, case_num){
     // FOR(i, 337, case_num){
+    // RFOR(i, 0, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
         OUT("data_load");
-        string filename = to_string(i) + ".txt";
-        string file_path = DATA_DIR + filename;
+        string input_filename = to_string(i) + ".txt";
+        string file_path = DATA_DIR + input_filename;
         ifstream ifs(file_path);
         assert(!ifs.fail());
         data_load(ifs);
 
+        string output_filename="output/"+to_string(i)+".txt";
         // double score = annealing(timer, 1000000, 100000);
-        double score = search("output/"+to_string(i)+".txt");
+        double score = search(output_filename, false, 1);
+        // double score = search(output_filename, true, 1);
+        // double score = search(output_filename, false, 0.95);
+        // double score = search(output_filename, true, 0.95);
+        // double score = search(output_filename, false, 0.01);
+        check_answer(output_filename);
         timer.end();
         if(DEBUG) {
             auto time = timer.time();
@@ -658,8 +673,8 @@ int main() {
             // OUT("num_wildcards: ", num_wildcards);
             OUT("score: ", score);
             OUT("time: ", time);
-            OUT("mean_score: ", sum_score/(i+1));
-            OUT("mean_log_score: ", sum_log_score/(i+1));
+            // OUT("mean_score: ", sum_score/(i+1));
+            // OUT("mean_log_score: ", sum_log_score/(i+1));
             OUT("sum_score: ", sum_score);
             OUT("sum_log_score: ", sum_log_score);
             OUT("max_time: ", max_time);
