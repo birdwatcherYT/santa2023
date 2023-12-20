@@ -557,9 +557,9 @@ int main() {
     // std::cin.tie(nullptr);
 
     ChronoTimer timer;
-    // int case_num = 398;
+    int case_num = 398;
     // int case_num = 1;
-    int case_num = 10;
+    // int case_num = 10;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
