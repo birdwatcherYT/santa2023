@@ -249,12 +249,14 @@ int num_wildcards;
 void data_load(istream &is){
     // データ読み込み ----------
     is  >> puzzle_type
-        >> state_length
-        >> initial_state
+        >> state_length;
+    initial_state.assign(state_length, "");
+    solution_state.assign(state_length, "");
+    is  >> initial_state
         >> solution_state
         >> allowed_action_num;
-    allowed_moves_name.resize(allowed_action_num);
-    allowed_moves.resize(allowed_action_num);
+    allowed_moves_name.assign(allowed_action_num, "");
+    allowed_moves.assign(allowed_action_num, VI(state_length));
     REP(i, allowed_action_num){
         is  >> allowed_moves_name[i]
             >> allowed_moves[i];
@@ -492,6 +494,10 @@ int main() {
             sum_score += score;
             sum_log_score += log1p(score);
             max_time = max(max_time, time);
+            // dump(initial_state)
+            // dump(solution_state)
+            // dump(allowed_moves_name)
+            // dump(allowed_moves)
             OUT("--------------------");
             OUT("case_num: ", i);
             OUT("puzzle_type: ", puzzle_type);
