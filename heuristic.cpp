@@ -239,8 +239,9 @@ public:
 // データ
 string puzzle_type;
 int state_length;
-VS initial_state;
-VS solution_state;
+map<string, int> label_mapping;
+VI initial_state;
+VI solution_state;
 int allowed_action_num;
 VS allowed_moves_name;
 VVI allowed_moves;
@@ -259,11 +260,21 @@ void data_load(istream &is){
     // データ読み込み ----------
     is  >> puzzle_type
         >> state_length;
-    initial_state.assign(state_length, "");
-    solution_state.assign(state_length, "");
-    is  >> initial_state
-        >> solution_state
-        >> allowed_action_num;
+    initial_state.assign(state_length, 0);
+    solution_state.assign(state_length, 0);
+    label_mapping.clear();
+    REP(i, state_length){
+        string label; is >> label;
+        if(!label_mapping.contains(label))
+            label_mapping[label]=SZ(label_mapping);
+        initial_state[i]=label_mapping[label];
+    }
+    REP(i, state_length){
+        string label; is >> label;
+        assert(label_mapping.contains(label));
+        solution_state[i]=label_mapping[label];
+    }
+    is >> allowed_action_num;
     allowed_moves_name.assign(allowed_action_num, "");
     allowed_moves.assign(allowed_action_num, VI(state_length));
     REP(i, allowed_action_num){
