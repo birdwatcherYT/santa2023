@@ -235,6 +235,30 @@ public:
     inline int64_t time() const { return chrono::duration_cast<chrono::milliseconds>(end_at - start_at).count(); }// ミリ秒
 };
 
+// 集合のハッシュ化: T=uint64_t, uint32_t, ULL, unsigned intなど
+// → 系列版へ拡張
+template<class T>
+class ZobristHashing {
+    vector<T> h;
+    int size, nunique;
+public:
+    ZobristHashing(int nunique, int size, mt19937& rand_engine):size(size), nunique(nunique) {
+        uniform_int_distribution<T> uniform(0, numeric_limits<T>::max());
+        h.reserve(nunique*size);
+        REP(i, nunique*size)
+            h.emplace_back(uniform(rand_engine));
+    }
+    T hash(const vector<T> &array) {
+        T value = 0;
+        REP(i, size){
+            // (i, e) → i*nunique + e
+            auto &e=array[i];
+            value ^= h[i*nunique + e];
+        }
+        return value;
+    }
+};
+
 
 // データ
 string puzzle_type;
@@ -288,6 +312,51 @@ void data_load(istream &is){
         allowed_moves_inverse[i]=inverse(allowed_moves[i]);
     }
     // ------------------------
+}
+
+#define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
+#define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
+
+VI do_action(const VI& state, int action_id){
+    auto s=state;
+    auto &action = get_action(action_id);
+    REP(i, state_length)
+        s[action[i]]=state[i];
+    return s;
+}
+
+VI simulation(const VI& state, const VI &actions){
+    auto s=state;
+    for(int a: actions)
+        s = do_action(s, a);
+    return s;
+}
+
+// 不一致数
+int mistakes(const VI& state){
+    int cnt=0;
+    REP(i, SZ(state))
+        cnt += state[i]!=solution_state[i];
+    return cnt;
+}
+
+string action_decode(const VI& action){
+    string ans="";
+    REP(i, SZ(action)){
+        int a=action[i];
+        ans += get_action_name(a);
+        if(i+1!=SZ(action))
+            ans += ".";
+    }
+    return ans;
+}
+
+void save_actions(const string &filename, const VI& action){
+    ofstream ofs(filename);
+    auto ans = action_decode(action);
+    OUT(ans);
+    ofs << ans;
+    ofs.close();
 }
 
 // 状態
@@ -424,70 +493,62 @@ double annealing(ChronoTimer &timer, int loop_max, int verbose){
     return best_state.score;
 }
 
-double chokudai_search(ChronoTimer &timer, int loop_max, int max_turn, int chokudai_width, int verbose){
-    if(DEBUG) OUT("chokudai_search");
-    State init;
-    init.initialize();
-    
-    auto [score, s] = init.calc_score();
-    if(DEBUG) OUT("initial score:", score);
-
-    // スコアが大きいほど良い
-    vector< MAXPQ<State> > pq(max_turn+1);
-    pq[0].push(init);
-    REP(loop, loop_max){
-        timer.end();
-        if(timer.time()>TIME_LIMIT)
-            break;
-        REP(turn, max_turn){ // 各ターン
-            REP(w, chokudai_width){
-                if(pq[turn].empty()) break;
-                // 先頭参照
-                const State &state = pq[turn].top();
-                for(State& next : state.next_states()){
-                    next.calc_score();
-                    pq[turn+1].push(next);
-                }
-                // 先頭削除
-                pq[turn].pop();
-            }
-        }
-        if (DEBUG && loop % verbose == 0)
-            OUT(loop, "\t:", pq[max_turn].top().score);
+VI construct_actions(int init_hash, int last_hash, const map<int, tuple<VI,int,int>> &pushed){
+    VI actions;
+    int h=last_hash;
+    while(h!=init_hash){
+        const auto &[_,next,a]=pushed.at(h);
+        actions.emplace_back(a);
+        h=next;
     }
-    return pq[max_turn].top().score;
+    REVERSE(actions);
+    return actions;
 }
-
-double beam_search(int max_turn, int beam_width, int verbose){
-    if(DEBUG) OUT("beam_search");
-    State init;
-    init.initialize();
+// 
+int search(const string &output){
+    // state -> hash
+    ZobristHashing<int> zhash(SZ(label_mapping), state_length, rand_engine);
+    // hash -> {state, prev_hash, action_id}
+    map<int, tuple<VI,int,int>> pushed;
+    // mistake, length, hash
+    MINPQ<tuple<int, int, int>> pq;
     
-    auto [score, s] = init.calc_score();
-    if(DEBUG) OUT("initial score:", score);
+    // 
+    int init_hash = zhash.hash(initial_state);
+    pushed[init_hash]={initial_state, 0, -1};
+    pq.emplace(mistakes(initial_state), 0, init_hash);
 
-    vector<State> top_states{init};
-    REP(turn, max_turn){ // 各ターン
-        vector<State> next_states;
-        for(const State &state : top_states) {
-            for(State& next : state.next_states()){
-                next.calc_score();
-                next_states.emplace_back(next);
-            }
-            // スコアが大きいほど良い
-            // RSORT(next_states);
-            // partial_sort(next_states.begin(), next_states.begin() + min(beam_width, SZ(next_states)), next_states.end(), std::greater<>{});
-            nth_element(next_states.begin(), next_states.begin() + min(beam_width, SZ(next_states)), next_states.end(), std::greater<>{});
+    int goal_hash = zhash.hash(solution_state);
 
-            // 上位beam_width個に絞る
-            if (SZ(next_states)>beam_width)
-                next_states.resize(beam_width);
+    while(!pq.empty()){
+        auto [mistake, length, hash] = pq.top(); pq.pop();
+        // dump(pq.size())
+        // dump(pushed.size())
+        if(goal_hash==hash){
+            assert(solution_state==get<0>(pushed[hash]));
+            auto actions=construct_actions(init_hash, goal_hash, pushed);
+            assert(simulation(initial_state, actions)==solution_state);
+            OUT("solved");
+            save_actions(output, actions);
+            return length;
         }
-        top_states = next_states;
-        if (DEBUG && turn % verbose == 0)
-            OUT(turn, "\t:", top_states.front().score);
+        if(num_wildcards!=0 && mistake <= num_wildcards){
+            OUT("solved using wildcards");
+            auto actions=construct_actions(init_hash, goal_hash, pushed);
+            save_actions(output, actions);
+            return length;
+        }
+        const auto &state=get<0>(pushed[hash]);
+        REP(a, allowed_action_num*2){
+            auto next = do_action(state, a);
+            int next_hash = zhash.hash(next);
+            if(pushed.contains(next_hash))
+                continue;
+            pushed[next_hash]={next, hash, a};
+            pq.emplace(mistakes(next), length+1, next_hash);
+        }
     }
-    return top_states.front().score;
+    return INF;
 }
 
 const string DATA_DIR = "./data/";
@@ -497,7 +558,8 @@ int main() {
 
     ChronoTimer timer;
     // int case_num = 398;
-    int case_num = 1;
+    // int case_num = 1;
+    int case_num = 10;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
@@ -512,7 +574,8 @@ int main() {
         assert(!ifs.fail());
         data_load(ifs);
 
-        double score = annealing(timer, 1000000, 100000);
+        // double score = annealing(timer, 1000000, 100000);
+        double score = search("output/"+to_string(i)+".txt");
         timer.end();
         if(DEBUG) {
             auto time = timer.time();
@@ -525,10 +588,10 @@ int main() {
             // dump(allowed_moves)
             OUT("--------------------");
             OUT("case_num: ", i);
-            OUT("puzzle_type: ", puzzle_type);
-            OUT("state_length: ", state_length);
-            OUT("allowed_action_num: ", allowed_action_num);
-            OUT("num_wildcards: ", num_wildcards);
+            // OUT("puzzle_type: ", puzzle_type);
+            // OUT("state_length: ", state_length);
+            // OUT("allowed_action_num: ", allowed_action_num);
+            // OUT("num_wildcards: ", num_wildcards);
             OUT("score: ", score);
             OUT("time: ", time);
             OUT("mean_score: ", sum_score/(i+1));
