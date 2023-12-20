@@ -32,6 +32,8 @@
 #include <thread>
 #include <optional> // optional<int> f = nullopt; if(f) f.value();
 #include <regex> // regex_replace("target", regex("old"), "new");
+#include <filesystem>
+
 #define MY_PI     3.14159265358979323846
 #define MY_E      2.7182818284590452354
 #define INF     (INT_MAX / 2)
@@ -248,7 +250,7 @@ public:
         REP(i, nunique*size)
             h.emplace_back(uniform(rand_engine));
     }
-    T hash(const vector<T> &array) {
+    T hash(const VI &array) {
         T value = 0;
         REP(i, size){
             // (i, e) → i*nunique + e
@@ -258,6 +260,21 @@ public:
         return value;
     }
 };
+vector<string> split_str(const string &str, char delim, bool ignore_empty){
+    stringstream ss{str};
+    string buf;
+    vector<string> result;
+    while (std::getline(ss, buf, delim)) {
+        if (!ignore_empty || !buf.empty())
+            result.emplace_back(buf);
+    }
+    if (!ignore_empty && !str.empty() && str.back()==delim)
+        result.emplace_back("");
+    return result;
+}
+bool file_exists(const std::string& name) {
+    return std::filesystem::is_regular_file(name);
+}
 
 
 // データ
@@ -340,20 +357,37 @@ int mistakes(const VI& state){
     return cnt;
 }
 
-string action_decode(const VI& action){
+string action_decode(const VI& actions){
     string ans="";
-    REP(i, SZ(action)){
-        int a=action[i];
+    REP(i, SZ(actions)){
+        int a=actions[i];
         ans += get_action_name(a);
-        if(i+1!=SZ(action))
+        if(i+1!=SZ(actions))
             ans += ".";
     }
     return ans;
 }
 
-void save_actions(const string &filename, const VI& action){
+
+VI load_actions(const string &filename){
+    ifstream ifs(filename);
+    string str;
+    ifs>>str;
+
+    map<string, int> action_mapping;
+    REP(i, allowed_action_num){
+        action_mapping[allowed_moves_name[i]]=i;
+        action_mapping["-"+allowed_moves_name[i]]=i+allowed_action_num;
+    }
+
+    VI actions;
+    for(auto& a: split_str(str, '.', true))
+        actions.emplace_back(action_mapping[a]);
+    return actions;
+}
+void save_actions(const string &filename, const VI& actions){
     ofstream ofs(filename);
-    auto ans = action_decode(action);
+    auto ans = action_decode(actions);
     OUT(ans);
     ofs << ans;
     ofs.close();
@@ -493,11 +527,13 @@ double annealing(ChronoTimer &timer, int loop_max, int verbose){
     return best_state.score;
 }
 
-VI construct_actions(int init_hash, int last_hash, const map<int, tuple<VI,int,int>> &pushed){
+// VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<VI,uint64_t,int>> &pushed){
+VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<uint64_t,int>> &pushed){
     VI actions;
-    int h=last_hash;
+    auto h=last_hash;
     while(h!=init_hash){
-        const auto &[_,next,a]=pushed.at(h);
+        // const auto &[_,next,a]=pushed.at(h);
+        const auto &[next,a]=pushed.at(h);
         actions.emplace_back(a);
         h=next;
     }
@@ -507,45 +543,70 @@ VI construct_actions(int init_hash, int last_hash, const map<int, tuple<VI,int,i
 // 
 int search(const string &output){
     // state -> hash
-    ZobristHashing<int> zhash(SZ(label_mapping), state_length, rand_engine);
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     // hash -> {state, prev_hash, action_id}
-    map<int, tuple<VI,int,int>> pushed;
+    // unordered_map<uint64_t, tuple<VI,uint64_t,int>> pushed;
+    // hash -> {prev_hash, action_id}
+    unordered_map<uint64_t, tuple<uint64_t,int>> pushed;
     // mistake, length, hash
-    MINPQ<tuple<int, int, int>> pq;
-    
+    MINPQ<tuple<int, int, uint64_t>> pq;
+    // 保存してあるベスト解
+    int current_best_size=INF;
+    if(file_exists(output)){
+        current_best_size=SZ(load_actions(output));
+        dump(current_best_size)
+    }
     // 
-    int init_hash = zhash.hash(initial_state);
-    pushed[init_hash]={initial_state, 0, -1};
+    auto init_hash = zhash.hash(initial_state);
+    // pushed[init_hash]={initial_state, 0, -1};
+    pushed[init_hash]={0, -1};
     pq.emplace(mistakes(initial_state), 0, init_hash);
-
-    int goal_hash = zhash.hash(solution_state);
-
+    auto goal_hash = zhash.hash(solution_state);
+    int searched=0;
     while(!pq.empty()){
         auto [mistake, length, hash] = pq.top(); pq.pop();
-        // dump(pq.size())
-        // dump(pushed.size())
+        searched++;
+        if(searched%100000==0)
+            dump(searched)
         if(goal_hash==hash){
-            assert(solution_state==get<0>(pushed[hash]));
-            auto actions=construct_actions(init_hash, goal_hash, pushed);
+            // assert(solution_state==get<0>(pushed[hash]));
+            auto actions=construct_actions(init_hash, hash, pushed);
             assert(simulation(initial_state, actions)==solution_state);
             OUT("solved");
-            save_actions(output, actions);
+            if(SZ(actions)<current_best_size){
+                OUT("saved", current_best_size, "->", SZ(actions));
+                save_actions(output, actions);
+            }
             return length;
         }
         if(num_wildcards!=0 && mistake <= num_wildcards){
             OUT("solved using wildcards");
-            auto actions=construct_actions(init_hash, goal_hash, pushed);
-            save_actions(output, actions);
+            auto actions=construct_actions(init_hash, hash, pushed);
+            if(SZ(actions)<current_best_size){
+                OUT("saved", current_best_size, "->", SZ(actions));
+                save_actions(output, actions);
+            }
             return length;
         }
-        const auto &state=get<0>(pushed[hash]);
+        // const auto &state=get<0>(pushed[hash]);
+        auto actions=construct_actions(init_hash, hash, pushed);
+        auto state=simulation(initial_state, actions);
+        if(length<current_best_size)
         REP(a, allowed_action_num*2){
             auto next = do_action(state, a);
-            int next_hash = zhash.hash(next);
+            auto next_hash = zhash.hash(next);
             if(pushed.contains(next_hash))
                 continue;
-            pushed[next_hash]={next, hash, a};
+            // pushed[next_hash]={next, hash, a};
+            pushed[next_hash]={hash, a};
             pq.emplace(mistakes(next), length+1, next_hash);
+            if(pq.size()%5000000==0)
+                dump(pq.size())
+            if(pushed.size()%5000000==0)
+                dump(pushed.size())
+            // // 打ち切り
+            // if(pq.size()>100000000||pushed.size()>100000000)
+            //     return INF;
         }
     }
     return INF;
@@ -553,9 +614,6 @@ int search(const string &output){
 
 const string DATA_DIR = "./data/";
 int main() {
-    // ios::sync_with_stdio(false);
-    // std::cin.tie(nullptr);
-
     ChronoTimer timer;
     int case_num = 398;
     // int case_num = 1;
@@ -564,8 +622,9 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     REP(i, case_num){
+    // FOR(i, 30, case_num){
         timer.start();
-
+        dump(SEED)
         rand_engine.seed(SEED);
         OUT("data_load");
         string filename = to_string(i) + ".txt";
