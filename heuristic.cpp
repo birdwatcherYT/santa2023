@@ -395,6 +395,7 @@ void save_actions(const string &filename, const VI& actions){
 
 // 状態
 struct State {
+    VI state;
     double score;
     double annealing_score;
 

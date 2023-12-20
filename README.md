@@ -33,3 +33,5 @@
     - スコア
         - ターゲットとの一致具合
         - actionの長さ
+
+https://www.kaggle.com/competitions/santa-2023/discussion/462598
