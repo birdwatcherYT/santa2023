@@ -1,0 +1,8 @@
+wreath_7/7
+12
+A C A A B B B A C B A B
+C A C A A A A B B B B B
+2
+l 1 2 3 4 5 6 0 7 8 9 10 11
+r 7 1 10 3 4 5 6 8 9 2 11 0
+0
