@@ -245,6 +245,15 @@ int allowed_action_num;
 VS allowed_moves_name;
 VVI allowed_moves;
 int num_wildcards;
+// 逆操作
+VVI allowed_moves_inverse;
+
+VI inverse(const VI &move){
+    auto inv=move;
+    REP(i, SZ(inv))
+        inv[move[i]]=i;
+    return inv;
+}
 
 void data_load(istream &is){
     // データ読み込み ----------
@@ -262,6 +271,11 @@ void data_load(istream &is){
             >> allowed_moves[i];
     }
     is >> num_wildcards;
+    // 逆操作
+    allowed_moves_inverse.assign(allowed_action_num, VI());
+    REP(i, allowed_action_num){
+        allowed_moves_inverse[i]=inverse(allowed_moves[i]);
+    }
     // ------------------------
 }
 
