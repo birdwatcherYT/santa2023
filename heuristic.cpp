@@ -350,7 +350,7 @@ VI simulation(const VI& state, const VI &actions){
 }
 
 // 不一致数
-int mistakes(const VI& state){
+int get_mistakes(const VI& state){
     int cnt=0;
     REP(i, SZ(state))
         cnt += state[i]!=solution_state[i];
@@ -393,27 +393,260 @@ void save_actions(const string &filename, const VI& actions){
     ofs.close();
 }
 
+// VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<VI,uint64_t,int>> &pushed){
+VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<int,uint64_t,int>> &pushed){
+    VI actions;
+    auto h=last_hash;
+    while(h!=init_hash){
+        const auto &[_,next,a]=pushed.at(h);
+        // const auto &[next,a]=pushed.at(h);
+        actions.emplace_back(a);
+        h=next;
+    }
+    REVERSE(actions);
+    return actions;
+}
+optional<VI> search(const VI &start_state, const VI& goal_state, int current_best_size, bool strong_search, 
+    int wildcards=0,
+    size_t give_up=100000000){
+    // state -> hash
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+    // hash -> {length, prev_hash, action_id}
+    unordered_map<uint64_t, tuple<int, uint64_t,int>> pushed;
+    // mistake, length, hash
+    MINPQ<tuple<int, int, uint64_t>> pq;
+    auto init_hash = zhash.hash(start_state);
+    pushed[init_hash]={0, 0, -1};
+    pq.emplace(get_mistakes(start_state), 0, init_hash);
+    auto goal_hash = zhash.hash(goal_state);
+    int searched=0;
+    while(!pq.empty()){
+        auto [mistake, length, hash] = pq.top(); pq.pop();
+        searched++;
+        if(searched%100000==0)
+            dump(searched)
+        if(goal_hash==hash){
+            auto actions=construct_actions(init_hash, hash, pushed);
+            assert(simulation(start_state, actions)==goal_state);
+            // OUT("solved");
+            if(SZ(actions)<current_best_size)
+                return actions;
+            return nullopt;
+        }
+        if(wildcards!=0 && mistake <= wildcards){
+            // OUT("solved using wildcards");
+            auto actions=construct_actions(init_hash, hash, pushed);
+            if(SZ(actions)<current_best_size)
+                return actions;
+            return nullopt;
+        }
+        if(strong_search && get<0>(pushed[hash])<length) continue;
+        auto actions=construct_actions(init_hash, hash, pushed);
+        auto state=simulation(start_state, actions);
+        if(length<current_best_size)
+            REP(a, allowed_action_num*2){
+                auto next = do_action(state, a);
+                auto next_hash = zhash.hash(next);
+                if(strong_search){
+                    if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
+                        continue;
+                }else{
+                    if(pushed.contains(next_hash))
+                        continue;
+                }
+                pushed[next_hash]={length+1, hash, a};
+                pq.emplace(get_mistakes(next), length+1, next_hash);
+                if(pq.size()%5000000==0)
+                    dump(pq.size())
+                if(pushed.size()%5000000==0)
+                    dump(pushed.size())
+                // 打ち切り
+                if(pq.size()>give_up||pushed.size()>give_up)
+                    return nullopt;
+            }
+    }
+    return nullopt;
+}
+
+// 
+int search(const string &output, bool strong_search, double improve_rate=1){
+    // state -> hash
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+    // hash -> {length, prev_hash, action_id}
+    unordered_map<uint64_t, tuple<int, uint64_t,int>> pushed;
+    // mistake, length, hash
+    MINPQ<tuple<int, int, uint64_t>> pq;
+    // 保存してあるベスト解
+    int current_best_size=INF;
+    if(file_exists(output)){
+        current_best_size=SZ(load_actions(output));
+        dump(current_best_size)
+    }
+    auto init_hash = zhash.hash(initial_state);
+    pushed[init_hash]={0, 0, -1};
+    pq.emplace(get_mistakes(initial_state), 0, init_hash);
+    auto goal_hash = zhash.hash(solution_state);
+    int searched=0;
+    while(!pq.empty()){
+        auto [mistake, length, hash] = pq.top(); pq.pop();
+        searched++;
+        if(searched%100000==0)
+            dump(searched)
+        if(goal_hash==hash){
+            auto actions=construct_actions(init_hash, hash, pushed);
+            assert(simulation(initial_state, actions)==solution_state);
+            OUT("solved");
+            if(SZ(actions)<current_best_size){
+                OUT("saved", current_best_size, "->", SZ(actions));
+                save_actions(output, actions);
+            }
+            return length;
+        }
+        if(num_wildcards!=0 && mistake <= num_wildcards){
+            OUT("solved using wildcards");
+            auto actions=construct_actions(init_hash, hash, pushed);
+            if(SZ(actions)<current_best_size){
+                OUT("saved", current_best_size, "->", SZ(actions));
+                save_actions(output, actions);
+            }
+            return length;
+        }
+        if(get<0>(pushed[hash])<length) continue;
+        auto actions=construct_actions(init_hash, hash, pushed);
+        auto state=simulation(initial_state, actions);
+        if(length<current_best_size*improve_rate){
+            REP(a, allowed_action_num*2){
+                auto next = do_action(state, a);
+                auto next_hash = zhash.hash(next);
+                if(strong_search){
+                    if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
+                        continue;
+                }else{
+                    if(pushed.contains(next_hash))
+                        continue;
+                }
+                pushed[next_hash]={length+1, hash, a};
+                pq.emplace(get_mistakes(next), length+1, next_hash);
+                if(pq.size()%5000000==0)
+                    dump(pq.size())
+                if(pushed.size()%5000000==0)
+                    dump(pushed.size())
+                // // 打ち切り
+                // if(pq.size()>100000000||pushed.size()>100000000)
+                //     return INF;
+            }
+        }
+    }
+    return INF;
+}
+
+constexpr int FOUND=-1;
+struct IDAstar{
+    ZobristHashing<uint64_t> zhash;
+    int bound, current_best;
+    unordered_set<uint64_t> visit;
+    uint64_t goal_hash;
+    VI actions;
+    IDAstar(int current_best):
+        zhash(SZ(label_mapping), state_length, rand_engine),
+        current_best(current_best)
+    {
+        goal_hash=zhash.hash(solution_state);
+    }
+    int h(const VI& state)const{
+        return max(0, get_mistakes(state)-num_wildcards);
+    }
+    optional<VI> ida_star(){
+        bound = h(initial_state);
+        uint64_t init_hash=zhash.hash(initial_state);
+        visit.emplace(init_hash);
+        VI state=initial_state;
+        VI path;
+        while(1){
+            dump(bound)
+            int t = search(state, init_hash, path, 0);
+            if (t == FOUND) return actions;
+            if (t == INF) return nullopt;
+            bound=t;
+            // bound++;
+        }
+    }
+    int search(VI &state, uint64_t state_hash, VI &path, int g){
+        int f = g + h(state);
+        if (f > bound) return f;
+        if (state_hash==goal_hash) {
+            actions=path;
+            return FOUND;
+        }
+        int minval=INF;
+        if(g < current_best)
+        REP(a, allowed_action_num*2){
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            int t=search(next, next_hash, path, g + 1);
+            if (FOUND==t) return FOUND;
+            if (t < minval) minval = t;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return minval;
+    }
+};
+
+void check_answer(const string &filename){
+    auto actions=load_actions(filename);
+    auto result = simulation(initial_state, actions);
+    int mistake = get_mistakes(result);
+    assert(mistake<=num_wildcards);
+}
+
 // 状態
 struct State {
-    VI state;
+    VI actions;
+    // actions[i]適用結果はstates[i+1]に格納される
+    VVI states;
+    VI mistakes;
     double score;
     double annealing_score;
 
     State(){}
-    void initialize(){
+    void initialize(const VI &init_actions){
         if(DEBUG) OUT("initialize");
         // 初期解 ----------
-        // ----------------
+        actions=init_actions;
+        states.clear();
+        mistakes.clear();
+        states.emplace_back(initial_state);
+        mistakes.emplace_back(get_mistakes(states.back()));
+        simulate(0);
     }
+    void simulate(int from){
+        // 初期状態
+        states.resize(from+1);
+        mistakes.resize(from+1);
+        FOR(i, from, SZ(actions)){
+            int a = actions[i];
+            states.emplace_back(do_action(states.back(), a));
+            mistakes.emplace_back(get_mistakes(states.back()));
+        }// ----------------
+    }
+
     tuple<double, double> calc_score() {
         score = 0;
         annealing_score = 0;
         // スコア ----------
+        score=actions.size();
+        annealing_score=score + 100*max(0, mistakes.back()-num_wildcards);
         // -----------------
         return {score, annealing_score};
     }
     void print_answer() const {
         // 答え表示 ---------
+        OUT(action_decode(actions));
         // -----------------
     }
     // ターンがあるような場合
@@ -434,195 +667,136 @@ struct State {
 constexpr int TIME_LIMIT = INF;
 
 
-double annealing(ChronoTimer &timer, int loop_max, int verbose){
+double annealing(const string &filename, ChronoTimer &timer, int loop_max, int verbose){
     if(DEBUG) OUT("annealing");
-    constexpr double START_TEMP = 0.1;
-    constexpr double END_TEMP   = 0.001;
+    // constexpr double START_TEMP = 10;
+    // constexpr double END_TEMP   = 0.001;
 
+    assert(file_exists(filename));
     State state;
-    state.initialize();
+    auto init=load_actions(filename);
+    dump(SZ(init))
+    state.initialize(init);
 
-    auto [score, annealing_score] = state.calc_score();
-    if(DEBUG) OUT("initial score:", score, "\t", annealing_score);
+    // auto [score, annealing_score] = state.calc_score();
+    // if(DEBUG) OUT("initial score:", score, "\t", annealing_score);
+    if(DEBUG) OUT("initial score:", SZ(state.actions));
     // ベスト解を別で持っておく場合
-    State best_state=state;
+    // State best_state=state;
 
     // 改善されないとき強制遷移させる間隔
-    constexpr int FORCE_UPDATE = 10000;
-    int no_update_times=0;
+    // constexpr int FORCE_UPDATE = INF;
+    // int no_update_times=0;
     REP(loop, loop_max){
         timer.end();
         if(timer.time()>TIME_LIMIT)
             break;
+        
+        if (DEBUG && loop % verbose == 0)
+            OUT(loop, "\t:", SZ(state.actions));
 
         // State backup = state;
         // 操作
-        int op = get_rand(2);
-        // int i=get_rand(N), j=get_rand(N), k=get_rand(N);
-        switch(op){
-            case 0:
-            {
-            }
-            CASE 1:
-            {
-            }
+        int i=get_rand(SZ(state.states));
+        int j=(i+get_rand(1,SZ(state.states)))%SZ(state.states);
+        if(i>j)swap(i,j);
+        int length=j-i;
+        //
+        // dump(i)
+        // dump(j)
+        dump(length)
+        auto path=search(state.states[i], state.states[j], length, false, j==SZ(state.actions) ? num_wildcards : 0);
+        if(!path)continue;
+        const auto &res = path.value();
+        // dump(SZ(res))
+        if(!path || SZ(res)>=length)continue;
+        REP(k, SZ(res)){
+            state.actions[i]=res[k];
+            state.states[i+1]=do_action(state.states[i], state.actions[i]);
+            state.mistakes[i+1]=get_mistakes(state.states[i+1]);
+            ++i;
         }
-        const auto [current_score, current_annealing_score] = state.calc_score();
+        // dump("^^")
+        // dump(i)
+        state.actions.erase(state.actions.begin()+i,state.actions.begin()+j);
+        state.states.erase(state.states.begin()+i+1,state.states.begin()+j+1);
+        state.mistakes.erase(state.mistakes.begin()+i+1,state.mistakes.begin()+j+1);
+        OUT("update!!!!!", SZ(state.actions));
+        // const auto [current_score, current_annealing_score] = state.calc_score();
         
-        if (DEBUG && loop % verbose == 0){
-            // OUT(loop, "\t:", score, "\t", annealing_score);
-            OUT(loop, "\t:", score, "\t", annealing_score, "\t", best_state.score, "\t", best_state.annealing_score);
-        }
+        // if (DEBUG && loop % verbose == 0){
+        //     // OUT(loop, "\t:", score, "\t", annealing_score);
+        //     OUT(loop, "\t:", score, "\t", annealing_score, "\t", best_state.score, "\t", best_state.annealing_score);
+        // }
 
-        if (current_annealing_score < annealing_score){
-            // 改善された場合
-            no_update_times=0;
-            score = current_score;
-            annealing_score = current_annealing_score;
-            // ベスト解
-            if (current_annealing_score<best_state.annealing_score)
-                best_state=state;
-            continue;
-        }
-        // 改善されなかった場合
-        ++no_update_times;
-        if (no_update_times>=FORCE_UPDATE){
-            // 強制遷移
-            no_update_times=0;
-            score = current_score;
-            annealing_score = current_annealing_score;
-            continue;
-        }
-        // 温度
-        const double temp = START_TEMP + (END_TEMP - START_TEMP) * loop / loop_max; // 線形
-        // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) loop / loop_max); // 指数
-        // const double temp = START_TEMP + (END_TEMP - START_TEMP) * (double) timer.time() / TIME_LIMIT; // 線形
-        // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) timer.time() / TIME_LIMIT); // 指数
-        const double probability = exp((annealing_score-current_annealing_score) / temp);
-        if (probability > get_rand()){
-            // 温度による遷移
-            score = current_score;
-            annealing_score = current_annealing_score;
-            continue;
-        }
+        // if (current_annealing_score < annealing_score){
+        //     // 改善された場合
+        //     no_update_times=0;
+        //     score = current_score;
+        //     annealing_score = current_annealing_score;
+        //     // ベスト解
+        //     if (current_score<best_state.score && state.mistakes.back()<=num_wildcards)
+        //         best_state=state;
+        //     continue;
+        // }
+        // // 改善されなかった場合
+        // ++no_update_times;
+        // if (no_update_times>=FORCE_UPDATE){
+        //     // 強制遷移
+        //     no_update_times=0;
+        //     score = current_score;
+        //     annealing_score = current_annealing_score;
+        //     continue;
+        // }
+        // // 温度
+        // const double temp = START_TEMP + (END_TEMP - START_TEMP) * loop / loop_max; // 線形
+        // // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) loop / loop_max); // 指数
+        // const double probability = exp((annealing_score-current_annealing_score) / temp);
+        // if (probability > get_rand()){
+        //     // 温度による遷移
+        //     score = current_score;
+        //     annealing_score = current_annealing_score;
+        //     continue;
+        // }
 
         // もとに戻す
         // 逆操作が難しい場合はまるごとコピーする
         // NOTE: 焼きなましは遷移が失敗することのほうが多いため、その場合はbackup側を変更して、成功時にstateに反映させたほうが速い
         // state = backup;
-        switch(op){
-            case 0:
-            {
-            }
-            CASE 1:
-            {
-            }
-        }
+        // switch(op){
+        //     case 0:
+        //     {
+        //     }
+        //     CASE 1:
+        //     {
+        //     }
+        // }
     }
     if(DEBUG){
         // OUT("final score:", score, "\t", annealing_score);
         // state.print_answer();
-        OUT("final score:", best_state.score, "\t", best_state.annealing_score);
-        best_state.print_answer();
+        // OUT("final score:", best_state.score, "\t", best_state.annealing_score);
+        OUT("final score:", SZ(state.actions));
+        state.print_answer();
     }
-    return best_state.score;
+    return SZ(state.actions);
 }
 
-// VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<VI,uint64_t,int>> &pushed){
-VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map<uint64_t, tuple<int,uint64_t,int>> &pushed){
-    VI actions;
-    auto h=last_hash;
-    while(h!=init_hash){
-        const auto &[_,next,a]=pushed.at(h);
-        // const auto &[next,a]=pushed.at(h);
-        actions.emplace_back(a);
-        h=next;
-    }
-    REVERSE(actions);
-    return actions;
-}
-// 
-int search(const string &output, bool strong_search, double improve_rate=1){
-    // state -> hash
-    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
-    // hash -> {state, prev_hash, action_id}
-    // unordered_map<uint64_t, tuple<VI,uint64_t,int>> pushed;
-    // hash -> {length, prev_hash, action_id}
-    unordered_map<uint64_t, tuple<int, uint64_t,int>> pushed;
-    // mistake, length, hash
-    MINPQ<tuple<int, int, uint64_t>> pq;
-    // 保存してあるベスト解
-    int current_best_size=INF;
-    if(file_exists(output)){
-        current_best_size=SZ(load_actions(output));
-        dump(current_best_size)
-    }
-    auto init_hash = zhash.hash(initial_state);
-    // pushed[init_hash]={initial_state, 0, -1};
-    pushed[init_hash]={0, 0, -1};
-    pq.emplace(mistakes(initial_state), 0, init_hash);
-    auto goal_hash = zhash.hash(solution_state);
-    int searched=0;
-    while(!pq.empty()){
-        auto [mistake, length, hash] = pq.top(); pq.pop();
-        searched++;
-        if(searched%100000==0)
-            dump(searched)
-        if(goal_hash==hash){
-            // assert(solution_state==get<0>(pushed[hash]));
-            auto actions=construct_actions(init_hash, hash, pushed);
-            assert(simulation(initial_state, actions)==solution_state);
-            OUT("solved");
-            if(SZ(actions)<current_best_size){
-                OUT("saved", current_best_size, "->", SZ(actions));
-                save_actions(output, actions);
-            }
-            return length;
+int ida_solve(const string &filename){
+    assert(file_exists(filename));
+    auto current_best=load_actions(filename);
+    dump(SZ(current_best))
+
+    IDAstar idastar(SZ(current_best));
+    auto res=idastar.ida_star();
+    if(res){
+        if(SZ(res.value())<SZ(current_best)){
+            OUT("saved", SZ(current_best), "->", SZ(res.value()));
+            save_actions(filename, res.value());
         }
-        if(num_wildcards!=0 && mistake <= num_wildcards){
-            OUT("solved using wildcards");
-            auto actions=construct_actions(init_hash, hash, pushed);
-            if(SZ(actions)<current_best_size){
-                OUT("saved", current_best_size, "->", SZ(actions));
-                save_actions(output, actions);
-            }
-            return length;
-        }
-        if(get<0>(pushed[hash])<length) continue;
-        // const auto &state=get<0>(pushed[hash]);
-        auto actions=construct_actions(init_hash, hash, pushed);
-        auto state=simulation(initial_state, actions);
-        if(length<current_best_size*improve_rate)
-            REP(a, allowed_action_num*2){
-                auto next = do_action(state, a);
-                auto next_hash = zhash.hash(next);
-                if(strong_search){
-                    if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
-                        continue;
-                }else{
-                    if(pushed.contains(next_hash))
-                        continue;
-                }
-                // pushed[next_hash]={next, hash, a};
-                pushed[next_hash]={length+1, hash, a};
-                pq.emplace(mistakes(next), length+1, next_hash);
-                if(pq.size()%5000000==0)
-                    dump(pq.size())
-                if(pushed.size()%5000000==0)
-                    dump(pushed.size())
-                // // 打ち切り
-                // if(pq.size()>100000000||pushed.size()>100000000)
-                //     return INF;
-            }
+        return SZ(res.value());
     }
     return INF;
-}
-
-void check_answer(const string &filename){
-    auto actions=load_actions(filename);
-    auto result = simulation(initial_state, actions);
-    int mistake = mistakes(result);
-    assert(mistake<=num_wildcards);
 }
 
 const string DATA_DIR = "./data/";
@@ -633,7 +807,7 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     REP(i, case_num){
-    // FOR(i, 31, case_num){
+    // FOR(i, 30, case_num){
     // RFOR(i, 0, 284){
     // FOR(i, 284, case_num){
     // FOR(i, 337, case_num){
@@ -649,8 +823,9 @@ int main() {
         data_load(ifs);
 
         string output_filename="output/"+to_string(i)+".txt";
-        // double score = annealing(timer, 1000000, 100000);
-        double score = search(output_filename, false, 1);
+        double score=ida_solve(output_filename);
+        // double score = annealing(output_filename, timer, 100000, 10000);
+        // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
         // double score = search(output_filename, true, 0.95);

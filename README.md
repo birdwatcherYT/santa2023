@@ -30,8 +30,20 @@
         - action変更
         - action交換
         - action追加
+        - 破壊再構築
     - スコア
         - ターゲットとの一致具合
         - actionの長さ
 
-https://www.kaggle.com/competitions/santa-2023/discussion/462598
+系列の区間を繋ぐ操作を生成する
+    ランダム性のある貪欲
+    前処理で同じ状態が2度出てきたら圧縮する
+
+IDA*
+https://qiita.com/guicho271828/items/b3e885c5bde5bf7183c2
+https://qiita.com/persimmon-persimmon/items/48bf1b021c349d338f0f
+
+ゴールから展開した地点との差を評価関数にする
+2ステップを1操作にする
+性質を観察する
+双方向IDA
