@@ -47,3 +47,5 @@ https://qiita.com/persimmon-persimmon/items/48bf1b021c349d338f0f
 2ステップを1操作にする
 性質を観察する
 双方向IDA
+
+並行な操作には順序をつける

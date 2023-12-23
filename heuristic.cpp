@@ -356,6 +356,12 @@ int get_mistakes(const VI& state){
         cnt += state[i]!=solution_state[i];
     return cnt;
 }
+int get_mistakes(const VI& state,const VI& goal_state){
+    int cnt=0;
+    REP(i, SZ(state))
+        cnt += state[i]!=goal_state[i];
+    return cnt;
+}
 
 string action_decode(const VI& actions){
     string ans="";
@@ -417,7 +423,7 @@ optional<VI> search(const VI &start_state, const VI& goal_state, int current_bes
     MINPQ<tuple<int, int, uint64_t>> pq;
     auto init_hash = zhash.hash(start_state);
     pushed[init_hash]={0, 0, -1};
-    pq.emplace(get_mistakes(start_state), 0, init_hash);
+    pq.emplace(get_mistakes(start_state, goal_state), 0, init_hash);
     auto goal_hash = zhash.hash(goal_state);
     int searched=0;
     while(!pq.empty()){
@@ -455,7 +461,7 @@ optional<VI> search(const VI &start_state, const VI& goal_state, int current_bes
                         continue;
                 }
                 pushed[next_hash]={length+1, hash, a};
-                pq.emplace(get_mistakes(next), length+1, next_hash);
+                pq.emplace(get_mistakes(next, goal_state), length+1, next_hash);
                 if(pq.size()%5000000==0)
                     dump(pq.size())
                 if(pushed.size()%5000000==0)
@@ -545,36 +551,39 @@ struct IDAstar{
     ZobristHashing<uint64_t> zhash;
     int bound, current_best;
     unordered_set<uint64_t> visit;
-    uint64_t goal_hash;
+    // uint64_t goal_hash;
+    VI goal_state;
+    int wildcards;
     VI actions;
-    IDAstar(int current_best):
-        zhash(SZ(label_mapping), state_length, rand_engine),
-        current_best(current_best)
-    {
-        goal_hash=zhash.hash(solution_state);
+    IDAstar():zhash(SZ(label_mapping), state_length, rand_engine){
     }
     int h(const VI& state)const{
-        return max(0, get_mistakes(state)-num_wildcards);
+        return max(0, get_mistakes(state, goal_state)-wildcards);
     }
-    optional<VI> ida_star(){
-        bound = h(initial_state);
-        uint64_t init_hash=zhash.hash(initial_state);
+    optional<VI> ida_star(const VI &init_state, const VI &goal_state, int current_best, int wildcards){
+        this->wildcards=wildcards;
+        this->goal_state=goal_state;
+        this->current_best=current_best;
+        this->bound = h(init_state);
+        // this->goal_hash=zhash.hash(goal_state);
+        uint64_t init_hash=zhash.hash(init_state);
+        visit.clear();
         visit.emplace(init_hash);
-        VI state=initial_state;
+        VI state=init_state;
         VI path;
         while(1){
             dump(bound)
-            int t = search(state, init_hash, path, 0);
+            int t = search(state, path, 0);
             if (t == FOUND) return actions;
             if (t == INF) return nullopt;
             bound=t;
             // bound++;
         }
     }
-    int search(VI &state, uint64_t state_hash, VI &path, int g){
+    int search(VI &state, VI &path, int g){
         int f = g + h(state);
         if (f > bound) return f;
-        if (state_hash==goal_hash) {
+        if (f==g){
             actions=path;
             return FOUND;
         }
@@ -587,7 +596,7 @@ struct IDAstar{
                 continue;
             visit.emplace(next_hash);
             path.emplace_back(a);
-            int t=search(next, next_hash, path, g + 1);
+            int t=search(next, path, g + 1);
             if (FOUND==t) return FOUND;
             if (t < minval) minval = t;
             path.pop_back();
@@ -687,6 +696,7 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
     // 改善されないとき強制遷移させる間隔
     // constexpr int FORCE_UPDATE = INF;
     // int no_update_times=0;
+    IDAstar idastar;
     REP(loop, loop_max){
         timer.end();
         if(timer.time()>TIME_LIMIT)
@@ -705,7 +715,9 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
         // dump(i)
         // dump(j)
         dump(length)
-        auto path=search(state.states[i], state.states[j], length, false, j==SZ(state.actions) ? num_wildcards : 0);
+        // auto path=search(state.states[i], state.states[j], length, false, j==SZ(state.actions) ? num_wildcards : 0);
+        auto path=idastar.ida_star(state.states[i], state.states[j], length, j==SZ(state.actions) ? num_wildcards : 0);
+        
         if(!path)continue;
         const auto &res = path.value();
         // dump(SZ(res))
@@ -722,55 +734,6 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
         state.states.erase(state.states.begin()+i+1,state.states.begin()+j+1);
         state.mistakes.erase(state.mistakes.begin()+i+1,state.mistakes.begin()+j+1);
         OUT("update!!!!!", SZ(state.actions));
-        // const auto [current_score, current_annealing_score] = state.calc_score();
-        
-        // if (DEBUG && loop % verbose == 0){
-        //     // OUT(loop, "\t:", score, "\t", annealing_score);
-        //     OUT(loop, "\t:", score, "\t", annealing_score, "\t", best_state.score, "\t", best_state.annealing_score);
-        // }
-
-        // if (current_annealing_score < annealing_score){
-        //     // 改善された場合
-        //     no_update_times=0;
-        //     score = current_score;
-        //     annealing_score = current_annealing_score;
-        //     // ベスト解
-        //     if (current_score<best_state.score && state.mistakes.back()<=num_wildcards)
-        //         best_state=state;
-        //     continue;
-        // }
-        // // 改善されなかった場合
-        // ++no_update_times;
-        // if (no_update_times>=FORCE_UPDATE){
-        //     // 強制遷移
-        //     no_update_times=0;
-        //     score = current_score;
-        //     annealing_score = current_annealing_score;
-        //     continue;
-        // }
-        // // 温度
-        // const double temp = START_TEMP + (END_TEMP - START_TEMP) * loop / loop_max; // 線形
-        // // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) loop / loop_max); // 指数
-        // const double probability = exp((annealing_score-current_annealing_score) / temp);
-        // if (probability > get_rand()){
-        //     // 温度による遷移
-        //     score = current_score;
-        //     annealing_score = current_annealing_score;
-        //     continue;
-        // }
-
-        // もとに戻す
-        // 逆操作が難しい場合はまるごとコピーする
-        // NOTE: 焼きなましは遷移が失敗することのほうが多いため、その場合はbackup側を変更して、成功時にstateに反映させたほうが速い
-        // state = backup;
-        // switch(op){
-        //     case 0:
-        //     {
-        //     }
-        //     CASE 1:
-        //     {
-        //     }
-        // }
     }
     if(DEBUG){
         // OUT("final score:", score, "\t", annealing_score);
@@ -787,8 +750,8 @@ int ida_solve(const string &filename){
     auto current_best=load_actions(filename);
     dump(SZ(current_best))
 
-    IDAstar idastar(SZ(current_best));
-    auto res=idastar.ida_star();
+    IDAstar idastar;
+    auto res=idastar.ida_star(initial_state, solution_state, SZ(current_best), num_wildcards);
     if(res){
         if(SZ(res.value())<SZ(current_best)){
             OUT("saved", SZ(current_best), "->", SZ(res.value()));
@@ -808,9 +771,9 @@ int main() {
     int64_t max_time = 0;
     REP(i, case_num){
     // FOR(i, 30, case_num){
-    // RFOR(i, 0, 284){
     // FOR(i, 284, case_num){
     // FOR(i, 337, case_num){
+    // FOR(i, 338, case_num){
     // RFOR(i, 0, case_num){
         timer.start();
         dump(SEED)
