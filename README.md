@@ -60,3 +60,33 @@ https://qiita.com/persimmon-persimmon/items/48bf1b021c349d338f0f
 - ~~mistakeを変更箇所の数で割る~~
 
 共通のゴールを持った問題たちをまとめて解く
+
+双方向IDA*
+frontierをいくつか保持する
+
+
+g(start,x)+h(x,goal)
+g(goal,y)+h(y,start)
+- x: frontier from start
+- y: frontier from goal
+
+g(start,x)+h(x,y)+g(y,goal)
+- x: frontier from start
+- y: frontier from goal
+
+
+<!-- hをfrontierとのminにする -->
+双方向IDA*を再帰で書く
+g(start,x)+h(x,y)+g(y,goal)を試す
+DFSの探索順序を評価値順にする
+評価関数を回帰する
+
+部分的に揃える
+
+ゴールから制約付きでランダムに動かして、パターンを記録する(これをhとしてつかう)
+
+<!-- h := 各点を揃えるために必要な回数の和
+    事前計算可能
+
+                  A
+A A A A A A A A A B B B B B B B B B C C C C C C C C C D D D D D D D D D E E E E E E E E E F F F F F F F F F -->

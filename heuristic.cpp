@@ -370,6 +370,47 @@ void inv_operation(){
     dump(to_rotate_num)
 }
 
+// VVI to_goal_step;
+// VVI to_start_step;
+// VVI pre_heuristic(const VI& target_state){
+//     VVI result(state_length, VI(SZ(label_mapping), INF));
+//     queue<tuple<VI, int, int, int>> que;
+//     que.emplace(target_state, 0, -1, 0);
+//     while(!que.empty()){
+//         auto[state,cnt,prev_a,same_action_num]=que.front();que.pop();
+//         bool fin=true;
+//         REP(i, state_length){
+//             result[i][state[i]]=min(result[i][state[i]], cnt);
+//             REP(j, SZ(label_mapping))if(result[i][j]==INF){
+//                 fin=false;
+//                 break;
+//             }
+//         }
+//         if(fin) break;
+//         REP(a, allowed_action_num*2){
+//             int next_same_action_num=1;
+//             if(prev_a>=0){
+//                 if(a+allowed_action_num==prev_a || a==prev_a+allowed_action_num)
+//                     continue;
+//                 // グループ順序
+//                 int prev=(prev_a<allowed_action_num) ? prev_a : (prev_a-allowed_action_num);
+//                 int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+//                 if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+//                     continue;
+//                 // より短い別の動作で置換できる場合
+//                 if(prev_a==a)
+//                     next_same_action_num = same_action_num+1;
+//                 if(2*next_same_action_num>to_rotate_num[act] 
+//                     || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+//                     continue;
+//             }
+//             que.emplace(do_action(state, a), cnt+1, a, next_same_action_num);
+//         }
+//     }
+//     return result;
+// }
+
+
 void data_load(istream &is){
     // データ読み込み ----------
     is  >> puzzle_type
@@ -403,8 +444,11 @@ void data_load(istream &is){
     }
     // グループ分け
     devide_independent_action();
-    // 
+    // 回転数
     inv_operation();
+    // 
+    // to_goal_step=pre_heuristic(solution_state);
+    // to_start_step=pre_heuristic(initial_state);
 }
 
 
@@ -622,6 +666,15 @@ struct IDAstar{
     int h(const VI& state, const VI& state_g, int wild)const{
         return max(0, get_mistakes(state, state_g)-wild);
     }
+    int h(const VI& state, const VI& state_g, int wild, const VVI &to_step)const{
+        int cnt=0, step=0;
+        REP(i, SZ(state)){
+            cnt += (state[i]!=state_g[i]);
+            step += to_step[i][state[i]];
+        }
+        if(cnt<=wild)return 0;
+        return step;
+    }
     optional<VI> ida_star(const VI &init_state, const VI &goal_state, int current_best, int wildcards){
         this->wildcards=wildcards;
         this->goal_state=goal_state;
@@ -642,15 +695,15 @@ struct IDAstar{
             dump(searched)
         }
     }
-    optional<VI> ida_star_bidirect(const VI &init_state, const VI &goal_state, int current_best){
+    optional<VI> ida_star_bidirect(const VI &init_state, const VI &goal_state, int current_best, int wild){
         this->current_best=current_best;
-        this->bound = h(init_state, goal_state, num_wildcards);
+        this->bound = h(init_state, goal_state, wild);
         // uint64_t init_hash=zhash.hash(init_state);
         // visit.clear();
         // visit.emplace(init_hash);
         while(1){
             dump(bound)
-            int t = bidirectional_search(init_state, goal_state);
+            int t = bidirectional_search(init_state, goal_state, wild);
             if (t == FOUND) return actions;
             bound++;
         }
@@ -679,7 +732,8 @@ struct IDAstar{
             }
             auto next=do_action(state, a);
             auto next_hash=zhash.hash(next);
-            if(frontier.contains(next_hash))
+            // if(frontier.contains(next_hash))// 双方向IDAでなぜか発見できないパターン
+            if(frontier.contains(next_hash) && SZ(frontier[next_hash])<=SZ(path)+1)
                 continue;
             // if (visit.contains(next_hash))
             //     continue;
@@ -695,13 +749,11 @@ struct IDAstar{
         }
         return update;
     }
-    int bidirectional_search(const VI &start_state, const VI &goal_state){
+    int bidirectional_search(const VI &start_state, const VI &goal_state, int wild){
         stack<tuple<int, uint64_t>> st_s, st_g;
         st_s.emplace(0, zhash.hash(start_state));
         st_g.emplace(0, zhash.hash(goal_state));
 
-        // unordered_set<uint64_t> frontier_s;
-        // unordered_set<uint64_t> frontier_g;
         unordered_map<uint64_t, VI> frontier_s;
         unordered_map<uint64_t, VI> frontier_g;
         frontier_s[zhash.hash(start_state)]=VI();
@@ -714,7 +766,8 @@ struct IDAstar{
                 auto [same_action_num_s, hash_s] = st_s.top(); st_s.pop();
                 auto &action_s=frontier_s[hash_s];
                 auto state_s = simulation(initial_state, action_s);
-                int h_value=h(state_s, goal_state, num_wildcards);
+                int h_value=h(state_s, goal_state, wild);
+                // int h_value=h(state_s, goal_state, wild, to_goal_step);
                 int f_s = SZ(action_s) + h_value;
                 bool update=false;
                 if (f_s <= bound){
@@ -744,6 +797,7 @@ struct IDAstar{
                 auto &action_g=frontier_g[hash_g];
                 auto state_g = simulation(goal_state, action_g);
                 int h_value = h(state_g, start_state, 0);
+                // int h_value = h(state_g, start_state, 0, to_start_step);
                 int f_g = SZ(action_g) + h_value;
                 bool update=false;
                 if (f_g <= bound) {
@@ -917,7 +971,8 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
         dump(j)
         dump(length)
         // auto path=search(states[i], states[j], length, false, states[j]==solution_state ? num_wildcards : 0);
-        auto path=idastar.ida_star(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
+        // auto path=idastar.ida_star(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
+        auto path=idastar.ida_star_bidirect(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
         
         if(!path)continue;
         const auto &res = path.value();
@@ -938,14 +993,29 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
     return SZ(actions);
 }
 
+void same_state_check(const VI& action){
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+    set<uint64_t> hash;
+    hash.emplace(zhash.hash(initial_state));
+    auto state=initial_state;
+    for(int a:action){
+        state=do_action(state,a);
+        auto h=zhash.hash(state);
+        assert(!hash.contains(h));
+        hash.emplace(h);
+    }
+}
+
 int ida_solve(const string &filename){
     assert(file_exists(filename));
     auto current_best=load_actions(filename);
     dump(SZ(current_best))
+    // same_state_check(current_best);
+    // return INF;
 
     IDAstar idastar;
     // auto res=idastar.ida_star(initial_state, solution_state, SZ(current_best), num_wildcards);
-    auto res=idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best));
+    auto res=idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best), num_wildcards);
     
     if(res){
         if(SZ(res.value())<SZ(current_best)){
@@ -957,6 +1027,7 @@ int ida_solve(const string &filename){
     return INF;
 }
 
+
 const string DATA_DIR = "./data/";
 int main() {
     ChronoTimer timer;
@@ -966,13 +1037,18 @@ int main() {
     int64_t max_time = 0;
     REP(i, case_num){
     // FOR(i, 30, case_num){
+    // FOR(i, 277, case_num){
     // FOR(i, 284, case_num){
     // FOR(i, 338, case_num){
-    // FOR(i, 331, case_num){
+    // FOR(i, 330, case_num){
+    // FOR(i, 336, case_num){
+    // RREP(i, 336+1){
+    // RREP(i, 333+1){
+    // FOR(i, 332, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
-        OUT("data_load");
+        OUT("data_load", i);
         string input_filename = to_string(i) + ".txt";
         string file_path = DATA_DIR + input_filename;
         ifstream ifs(file_path);
