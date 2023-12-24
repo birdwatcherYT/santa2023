@@ -329,14 +329,14 @@ void devide_independent_action(){
     }
     to_group_id.assign(allowed_action_num, 0);
     to_order_in_group.assign(allowed_action_num, 0);
-    // VVI group;
+    VVI group;
     vector<SI> group_set;
     REP(i, allowed_action_num){
         bool change=false;
         REP(j, SZ(group_set))if((changes[i]&group_set[j]).empty()){
             to_group_id[i]=j;
             to_order_in_group[i]=SZ(group_set[j]);
-            // group[j].emplace_back(i);
+            group[j].emplace_back(i);
             group_set[j]=group_set[j]|changes[i];
             change=true;
             break;
@@ -344,11 +344,11 @@ void devide_independent_action(){
         if(!change){
             to_group_id[i]=SZ(group_set);
             to_order_in_group[i]=0;
-            // group.emplace_back(VI{i});
+            group.emplace_back(VI{i});
             group_set.emplace_back(changes[i]);
         }
     }
-    // dump(group)
+    dump(group)
 }
 VI to_rotate_num;
 void inv_operation(){
@@ -360,12 +360,12 @@ void inv_operation(){
         VI index(SZ(initial_state));
         ARANGE(index);
         int rotate;
-        for(rotate=1;rotate<100;++rotate){
+        for(rotate=1;rotate<10000;++rotate){
             index=do_action(index, a);
             if(index_arange==index)
                 break;
         }
-        to_rotate_num[a]= rotate==100 ? INF : rotate;
+        to_rotate_num[a]= rotate==10000 ? INF : rotate;
     }
     dump(to_rotate_num)
 }
@@ -832,9 +832,7 @@ int main() {
     REP(i, case_num){
     // FOR(i, 30, case_num){
     // FOR(i, 284, case_num){
-    // FOR(i, 337, case_num){
     // FOR(i, 338, case_num){
-    // RREP(i, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
