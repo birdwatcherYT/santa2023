@@ -290,11 +290,84 @@ int num_wildcards;
 // 逆操作
 VVI allowed_moves_inverse;
 
+#define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
+#define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
+
+VI do_action(const VI& state, int action_id){
+    auto s=state;
+    auto &action = get_action(action_id);
+    REP(i, state_length)
+        s[i]=state[action[i]];
+    return s;
+}
+
+VI simulation(const VI& state, const VI &actions){
+    auto s=state;
+    for(int a: actions)
+        s = do_action(s, a);
+    return s;
+}
+
 VI inverse(const VI &move){
     auto inv=move;
     REP(i, SZ(inv))
         inv[move[i]]=i;
     return inv;
+}
+// 
+VI to_group_id;//(allowed_action_num);
+VI to_order_in_group;//(allowed_action_num);
+
+void devide_independent_action(){
+    vector<SI> changes(allowed_action_num);
+    REP(i, allowed_action_num){
+        const auto& move=allowed_moves[i];
+        REP(j, SZ(move))if(j!=move[j]){
+            changes[i].emplace(j);
+            changes[i].emplace(move[j]);
+        }
+    }
+    to_group_id.assign(allowed_action_num, 0);
+    to_order_in_group.assign(allowed_action_num, 0);
+    // VVI group;
+    vector<SI> group_set;
+    REP(i, allowed_action_num){
+        bool change=false;
+        REP(j, SZ(group_set))if((changes[i]&group_set[j]).empty()){
+            to_group_id[i]=j;
+            to_order_in_group[i]=SZ(group_set[j]);
+            // group[j].emplace_back(i);
+            group_set[j]=group_set[j]|changes[i];
+            change=true;
+            break;
+        }
+        if(!change){
+            to_group_id[i]=SZ(group_set);
+            to_order_in_group[i]=0;
+            // group.emplace_back(VI{i});
+            group_set.emplace_back(changes[i]);
+        }
+    }
+    // dump(group)
+}
+VI to_rotate_num;
+void inv_operation(){
+    to_rotate_num.assign(allowed_action_num, 0);
+    REP(a, allowed_action_num){
+        VI index_arange(SZ(initial_state));
+        ARANGE(index_arange);
+
+        VI index(SZ(initial_state));
+        ARANGE(index);
+        int rotate;
+        for(rotate=1;rotate<100;++rotate){
+            index=do_action(index, a);
+            if(index_arange==index)
+                break;
+        }
+        to_rotate_num[a]= rotate==100 ? INF : rotate;
+    }
+    dump(to_rotate_num)
 }
 
 void data_load(istream &is){
@@ -328,26 +401,12 @@ void data_load(istream &is){
     REP(i, allowed_action_num){
         allowed_moves_inverse[i]=inverse(allowed_moves[i]);
     }
-    // ------------------------
+    // グループ分け
+    devide_independent_action();
+    // 
+    inv_operation();
 }
 
-#define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
-#define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
-
-VI do_action(const VI& state, int action_id){
-    auto s=state;
-    auto &action = get_action(action_id);
-    REP(i, state_length)
-        s[i]=state[action[i]];
-    return s;
-}
-
-VI simulation(const VI& state, const VI &actions){
-    auto s=state;
-    for(int a: actions)
-        s = do_action(s, a);
-    return s;
-}
 
 // 不一致数
 int get_mistakes(const VI& state){
@@ -555,6 +614,7 @@ struct IDAstar{
     VI goal_state;
     int wildcards;
     VI actions;
+    int searched;
     IDAstar():zhash(SZ(label_mapping), state_length, rand_engine){
     }
     int h(const VI& state)const{
@@ -573,14 +633,17 @@ struct IDAstar{
         VI path;
         while(1){
             dump(bound)
-            int t = search(state, path, 0);
+            searched=0;
+            int t = search(state, path, 0, 0);
             if (t == FOUND) return actions;
             if (t == INF) return nullopt;
             bound=t;
             // bound++;
+            dump(searched)
         }
     }
-    int search(VI &state, VI &path, int g){
+    int search(VI &state, VI &path, int g, int same_action_num){
+        ++searched;
         int f = g + h(state);
         if (f > bound) return f;
         if (f==g){
@@ -588,15 +651,33 @@ struct IDAstar{
             return FOUND;
         }
         int minval=INF;
-        if(g < current_best)
+        if(g >= current_best) return minval;
         REP(a, allowed_action_num*2){
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+
             auto next=do_action(state, a);
             auto next_hash=zhash.hash(next);
             if (visit.contains(next_hash))
                 continue;
             visit.emplace(next_hash);
             path.emplace_back(a);
-            int t=search(next, path, g + 1);
+            int t=search(next, path, g + 1, next_same_action_num);
             if (FOUND==t) return FOUND;
             if (t < minval) minval = t;
             path.pop_back();
@@ -677,72 +758,51 @@ constexpr int TIME_LIMIT = INF;
 
 
 double annealing(const string &filename, ChronoTimer &timer, int loop_max, int verbose){
-    if(DEBUG) OUT("annealing");
-    // constexpr double START_TEMP = 10;
-    // constexpr double END_TEMP   = 0.001;
-
     assert(file_exists(filename));
-    State state;
-    auto init=load_actions(filename);
-    dump(SZ(init))
-    state.initialize(init);
+    auto actions=load_actions(filename);
+    int current_best=SZ(actions);
+    dump(current_best)
 
-    // auto [score, annealing_score] = state.calc_score();
-    // if(DEBUG) OUT("initial score:", score, "\t", annealing_score);
-    if(DEBUG) OUT("initial score:", SZ(state.actions));
-    // ベスト解を別で持っておく場合
-    // State best_state=state;
-
-    // 改善されないとき強制遷移させる間隔
-    // constexpr int FORCE_UPDATE = INF;
-    // int no_update_times=0;
+    if(DEBUG) OUT("initial score:", current_best);
     IDAstar idastar;
     REP(loop, loop_max){
-        timer.end();
-        if(timer.time()>TIME_LIMIT)
-            break;
-        
         if (DEBUG && loop % verbose == 0)
-            OUT(loop, "\t:", SZ(state.actions));
+            OUT(loop, "\t:", SZ(actions));
+        // 
+        VVI states;
+        states.emplace_back(initial_state);
+        for(int a: actions)
+            states.emplace_back(do_action(states.back(), a));
 
-        // State backup = state;
         // 操作
-        int i=get_rand(SZ(state.states));
-        int j=(i+get_rand(1,SZ(state.states)))%SZ(state.states);
+        int i=get_rand(SZ(states));
+        int j=(i+get_rand(1,SZ(states)))%SZ(states);
         if(i>j)swap(i,j);
         int length=j-i;
         //
-        // dump(i)
-        // dump(j)
+        dump(i)
+        dump(j)
         dump(length)
-        // auto path=search(state.states[i], state.states[j], length, false, j==SZ(state.actions) ? num_wildcards : 0);
-        auto path=idastar.ida_star(state.states[i], state.states[j], length, j==SZ(state.actions) ? num_wildcards : 0);
+        // auto path=search(states[i], states[j], length, false, states[j]==solution_state ? num_wildcards : 0);
+        auto path=idastar.ida_star(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
         
         if(!path)continue;
         const auto &res = path.value();
-        // dump(SZ(res))
-        if(!path || SZ(res)>=length)continue;
+        if(SZ(res)>=length)continue;
         REP(k, SZ(res)){
-            state.actions[i]=res[k];
-            state.states[i+1]=do_action(state.states[i], state.actions[i]);
-            state.mistakes[i+1]=get_mistakes(state.states[i+1]);
+            actions[i]=res[k];
             ++i;
         }
-        // dump("^^")
-        // dump(i)
-        state.actions.erase(state.actions.begin()+i,state.actions.begin()+j);
-        state.states.erase(state.states.begin()+i+1,state.states.begin()+j+1);
-        state.mistakes.erase(state.mistakes.begin()+i+1,state.mistakes.begin()+j+1);
-        OUT("update!!!!!", SZ(state.actions));
+        actions.erase(actions.begin()+i, actions.begin()+j);
+        OUT("update!!!!!", SZ(actions));
+        if(SZ(actions)<current_best){
+            OUT("saved", current_best, "->", SZ(actions));
+            save_actions(filename, actions);
+            check_answer(filename);
+            current_best=SZ(actions);
+        }
     }
-    if(DEBUG){
-        // OUT("final score:", score, "\t", annealing_score);
-        // state.print_answer();
-        // OUT("final score:", best_state.score, "\t", best_state.annealing_score);
-        OUT("final score:", SZ(state.actions));
-        state.print_answer();
-    }
-    return SZ(state.actions);
+    return SZ(actions);
 }
 
 int ida_solve(const string &filename){
@@ -774,7 +834,7 @@ int main() {
     // FOR(i, 284, case_num){
     // FOR(i, 337, case_num){
     // FOR(i, 338, case_num){
-    // RFOR(i, 0, case_num){
+    // RREP(i, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
@@ -787,7 +847,7 @@ int main() {
 
         string output_filename="output/"+to_string(i)+".txt";
         double score=ida_solve(output_filename);
-        // double score = annealing(output_filename, timer, 100000, 10000);
+        // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);

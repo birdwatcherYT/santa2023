@@ -49,3 +49,12 @@ https://qiita.com/persimmon-persimmon/items/48bf1b021c349d338f0f
 双方向IDA
 
 並行な操作には順序をつける
+3/3/3
+3回転=-1回転
+
+
+
+- 互いに独立な操作に順序をつける done
+- 複数操作をコスト付きでまとめる
+    ループ
+- ~~mistakeを変更箇所の数で割る~~
