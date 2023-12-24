@@ -58,3 +58,5 @@ https://qiita.com/persimmon-persimmon/items/48bf1b021c349d338f0f
 - 複数操作をコスト付きでまとめる
     ループ
 - ~~mistakeを変更箇所の数で割る~~
+
+共通のゴールを持った問題たちをまとめて解く
