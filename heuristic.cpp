@@ -476,6 +476,14 @@ string action_decode(const VI& actions){
     }
     return ans;
 }
+// 逆操作にする
+VI inverse_action(const VI& path){
+    auto action=path;
+    for(int &a:action)
+        a = a < allowed_action_num ? (a+allowed_action_num): (a-allowed_action_num);
+    REVERSE(action);
+    return action;
+}
 
 
 VI load_actions(const string &filename){
@@ -749,13 +757,83 @@ struct IDAstar{
         }
         return update;
     }
-    int bidirectional_search(const VI &start_state, const VI &goal_state, int wild){
-        stack<tuple<int, uint64_t>> st_s, st_g;
-        st_s.emplace(0, zhash.hash(start_state));
-        st_g.emplace(0, zhash.hash(goal_state));
+    int next_node(stack<tuple<int, int, uint64_t>> &st, unordered_map<uint64_t, VI>& frontier, 
+    const VI& init_state,
+    const VI& target_state, int wild, unordered_map<uint64_t, VI>& frontier_target,
+    bool from_start){
+        auto[a, same_action_num, hash]=st.top();st.pop();
+        if(a+1<allowed_action_num*2)
+            st.emplace(a+1, same_action_num, hash);
+        assert(frontier.contains(hash));
+        auto &path=frontier[hash];
+        // auto path=frontier[hash];
+        int next_same_action_num=1;
+        if(!path.empty()){
+            // 逆操作
+            if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                return INF;
+            // グループ順序
+            int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+            int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+            if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                return INF;
+            // より短い別の動作で置換できる場合
+            if(path.back()==a)
+                next_same_action_num = same_action_num+1;
+            if(2*next_same_action_num>to_rotate_num[act] 
+                || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                return INF;
+        }
+        path.emplace_back(a);
+        auto next = simulation(init_state, path);
+        auto next_hash=zhash.hash(next);
+        if(frontier.contains(next_hash) && SZ(frontier[next_hash])<=SZ(path)){
+            path.pop_back();
+            return INF;
+        }
+        frontier[next_hash]=path;
 
-        unordered_map<uint64_t, VI> frontier_s;
-        unordered_map<uint64_t, VI> frontier_g;
+        int h_value=h(next, target_state, wild);
+        if(h_value==0){
+            this->actions=path;
+            if(!from_start)
+                inverse_action(this->actions);
+            path.pop_back();
+            return FOUND;
+        }
+        int f = SZ(path) + h_value;
+        bool update=false;
+        if (f <= bound && SZ(path)<this->current_best){
+            st.emplace(0, next_same_action_num, next_hash);
+            update=true;
+        }
+        if(frontier_target.contains(next_hash)){
+            if(from_start){
+                OUT("find1!!!");
+                auto action=inverse_action(frontier_target[next_hash]);
+                this->actions=path;
+                this->actions.insert(this->actions.end(), action.begin(), action.end());
+            }else{
+                OUT("find2!!!");
+                auto action=inverse_action(path);
+                this->actions=frontier_target[next_hash];
+                this->actions.insert(this->actions.end(), action.begin(), action.end());
+            }
+            path.pop_back();
+            return FOUND;
+        }
+        if (update){
+            // frontier.erase(hash);
+        }
+        path.pop_back();
+        return INF;
+    }
+    int bidirectional_search(const VI &start_state, const VI &goal_state, int wild){
+        stack<tuple<int, int, uint64_t>> st_s, st_g;
+        st_s.emplace(0, 0, zhash.hash(start_state));
+        st_g.emplace(0, 0, zhash.hash(goal_state));
+
+        unordered_map<uint64_t, VI> frontier_s, frontier_g;
         frontier_s[zhash.hash(start_state)]=VI();
         frontier_g[zhash.hash(goal_state)]=VI();
 
@@ -763,68 +841,12 @@ struct IDAstar{
             // dump(SZ(st_s))
             // dump(SZ(st_g))
             if(!st_s.empty()){
-                auto [same_action_num_s, hash_s] = st_s.top(); st_s.pop();
-                auto &action_s=frontier_s[hash_s];
-                auto state_s = simulation(initial_state, action_s);
-                int h_value=h(state_s, goal_state, wild);
-                // int h_value=h(state_s, goal_state, wild, to_goal_step);
-                int f_s = SZ(action_s) + h_value;
-                bool update=false;
-                if (f_s <= bound){
-                    update=expand(st_s, frontier_s, state_s, action_s, same_action_num_s);
-                }
-                if(h_value==0){
-                    this->actions=action_s;
+                if(FOUND==next_node(st_s, frontier_s, start_state, goal_state, wild, frontier_g, true))
                     return FOUND;
-                }
-                if(frontier_g.contains(hash_s)){
-                    OUT("find1!!!");
-                    auto action=frontier_g[hash_s];
-                    // 逆操作にする
-                    for(int &a:action)
-                        a = a < allowed_action_num ? (a+allowed_action_num): (a-allowed_action_num);
-                    this->actions=action_s;
-                    this->actions.insert(this->actions.end(), action.rbegin(), action.rend());
-                    // if(SZ(this->actions)<=this->current_best)
-                    return FOUND;
-                }
-                if (update){
-                    frontier_s.erase(hash_s);
-                }
             }
             if(!st_g.empty()){
-                auto [same_action_num_g, hash_g] = st_g.top(); st_g.pop();
-                auto &action_g=frontier_g[hash_g];
-                auto state_g = simulation(goal_state, action_g);
-                int h_value = h(state_g, start_state, 0);
-                // int h_value = h(state_g, start_state, 0, to_start_step);
-                int f_g = SZ(action_g) + h_value;
-                bool update=false;
-                if (f_g <= bound) {
-                    update=expand(st_g, frontier_g, state_g, action_g, same_action_num_g);
-                }
-                if(h_value==0){
-                    this->actions=action_g;
-                    // 逆操作にする
-                    for(int &a:this->actions)
-                        a = a < allowed_action_num ? (a+allowed_action_num): (a-allowed_action_num);
-                    REVERSE(this->actions);
+                if(FOUND==next_node(st_g, frontier_g, goal_state, start_state, 0, frontier_s, false))
                     return FOUND;
-                }
-                if(frontier_s.contains(hash_g)){
-                    OUT("find2!!!");
-                    auto action=action_g;
-                    // 逆操作にする
-                    for(int &a:action)
-                        a = a < allowed_action_num ? (a+allowed_action_num): (a-allowed_action_num);
-                    this->actions=frontier_s[hash_g];
-                    this->actions.insert(this->actions.end(), action.rbegin(), action.rend());
-                    // if(SZ(this->actions)<=this->current_best)
-                    return FOUND;
-                }
-                if (update) {
-                    frontier_g.erase(hash_g);
-                }
             }
         }
         return INF;
@@ -1006,16 +1028,32 @@ void same_state_check(const VI& action){
     }
 }
 
-int ida_solve(const string &filename){
+void loop_check(const VI& action){
+    int prev=-1, cnt=0;
+    auto state=initial_state;
+    for(int a:action){
+        state=do_action(state,a);
+        if(prev!=a)cnt=1;
+        else cnt++;
+        assert(cnt <= to_rotate_num[a < allowed_action_num ? a : (a-allowed_action_num)]/2);
+    }
+}
+
+
+
+int ida_solve(const string &filename, bool dual){
     assert(file_exists(filename));
     auto current_best=load_actions(filename);
     dump(SZ(current_best))
     // same_state_check(current_best);
+    // loop_check(current_best);
     // return INF;
 
+
     IDAstar idastar;
-    // auto res=idastar.ida_star(initial_state, solution_state, SZ(current_best), num_wildcards);
-    auto res=idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best), num_wildcards);
+    auto res = dual ?
+          idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best), num_wildcards)
+        : idastar.ida_star(initial_state, solution_state, SZ(current_best), num_wildcards);
     
     if(res){
         if(SZ(res.value())<SZ(current_best)){
@@ -1037,10 +1075,11 @@ int main() {
     int64_t max_time = 0;
     REP(i, case_num){
     // FOR(i, 30, case_num){
+    // FOR(i, 32, case_num){
     // FOR(i, 277, case_num){
     // FOR(i, 284, case_num){
     // FOR(i, 338, case_num){
-    // FOR(i, 330, case_num){
+    // FOR(i, 335, case_num){
     // FOR(i, 336, case_num){
     // RREP(i, 336+1){
     // RREP(i, 333+1){
@@ -1056,7 +1095,9 @@ int main() {
         data_load(ifs);
 
         string output_filename="output/"+to_string(i)+".txt";
-        double score=ida_solve(output_filename);
+        // double score=ida_solve(output_filename, false);
+        double score=ida_solve(output_filename, true);
+
         // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);

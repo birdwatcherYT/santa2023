@@ -77,9 +77,11 @@ g(start,x)+h(x,y)+g(y,goal)
 
 <!-- hをfrontierとのminにする -->
 双方向IDA*を再帰で書く
+    スタックをスカラーで持つ
 g(start,x)+h(x,y)+g(y,goal)を試す
 DFSの探索順序を評価値順にする
 評価関数を回帰する
+    決定木
 
 部分的に揃える
 
@@ -90,3 +92,9 @@ DFSの探索順序を評価値順にする
 
                   A
 A A A A A A A A A B B B B B B B B B C C C C C C C C C D D D D D D D D D E E E E E E E E E F F F F F F F F F -->
+if(h_value==0)のいち
+メモリおさえる
+
+
+ルービックキューブ専用のアルゴリズム
+輪っか専用のアルゴリズム
