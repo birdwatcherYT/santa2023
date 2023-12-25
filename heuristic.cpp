@@ -1097,13 +1097,15 @@ int main() {
         string output_filename="output/"+to_string(i)+".txt";
         // double score=ida_solve(output_filename, false);
         double score=ida_solve(output_filename, true);
-
+        
         // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
         // double score = search(output_filename, true, 0.95);
         // double score = search(output_filename, false, 0.01);
+
+        // double score=0;
         check_answer(output_filename);
         timer.end();
         if(DEBUG) {

@@ -81,7 +81,10 @@ g(start,x)+h(x,y)+g(y,goal)
 g(start,x)+h(x,y)+g(y,goal)を試す
 DFSの探索順序を評価値順にする
 評価関数を回帰する
-    決定木
+    pythonでNNで推論できるか確認する
+    NNをC++で書く
+ソルバーに投げてみる
+
 
 部分的に揃える
 
@@ -97,4 +100,9 @@ if(h_value==0)のいち
 
 
 ルービックキューブ専用のアルゴリズム
+    https://qiita.com/7y2n/items/a840e44dba77b1859352
+    http://kociemba.org/cube.htm
+    https://www.kaggle.com/code/wrrosa/santa-2023-kociemba-s-two-phase-algo-1-116-550
+
+
 輪っか専用のアルゴリズム
