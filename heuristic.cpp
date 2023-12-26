@@ -88,6 +88,8 @@ template<class... T> ostream& operator<<(ostream& os, const tuple<T...>& t) {
 template<class T> ostream& operator<<(ostream& os, const vector<T>& vec) {
     os << "[ "; for ( const T& item : vec ) os << item << ", ";
     os << "]"; return os;
+    // for ( const T& item : vec ) os << item << ",";
+    return os;
 }
 template<class T> ostream& operator<<(ostream& os, const set<T>& s) {
     os << "{ "; for ( const T& item : s ) os << item << ", ";
@@ -295,7 +297,7 @@ VVI allowed_moves_inverse;
 
 VI do_action(const VI& state, int action_id){
     auto s=state;
-    auto &action = get_action(action_id);
+    const auto &action = get_action(action_id);
     REP(i, state_length)
         s[i]=state[action[i]];
     return s;
@@ -896,6 +898,89 @@ struct IDAstar{
     }
 };
 
+struct RandomWalk{
+    ZobristHashing<uint64_t> zhash;
+    unordered_set<uint64_t> visit;
+    VVI data;
+    int maxdepth;
+    unordered_set<uint64_t> data_hash;
+
+    RandomWalk(int d): zhash(SZ(label_mapping), state_length, rand_engine), maxdepth(d){}
+    void make_dataset(VI &state, int size){
+        auto hash=zhash.hash(state);
+        REP(i, size){
+            VI path;
+            visit.emplace(hash);
+            random_walk(state, path, 0, hash);
+            visit.clear();
+            if(i%10000==0)
+                dump(SZ(data))
+        }
+    }
+    bool random_walk(const VI &state, VI &path, int same_action_num, uint64_t hash){
+        if (SZ(path) >= maxdepth) {
+            if(data_hash.contains(hash))
+                return false;
+            data.emplace_back(path);
+            data_hash.emplace(hash);
+            return true;
+        }
+        REP(_, 100000){
+            int a= get_rand(allowed_action_num*2);
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            if(random_walk(next, path, next_same_action_num, next_hash))
+                return true;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return false;
+    }
+
+    void save_data(const string &filename){
+        ofstream ofs(filename);
+        visit.clear();
+        visit.emplace(zhash.hash(solution_state));
+        ofs<<0<<","<<solution_state<<endl;
+        for (auto & actions: data){
+            auto s=solution_state;
+            int cnt=0;
+            for(int a: actions){
+                s = do_action(s, a);
+                ++cnt;
+                auto hash=zhash.hash(s);
+                if(visit.contains(hash))
+                    continue;
+                ofs<<cnt<<","<<s<<endl;
+                visit.emplace(hash);
+            }
+        }
+        ofs.close();
+    }
+};
+
 void check_answer(const string &filename){
     auto actions=load_actions(filename);
     auto result = simulation(initial_state, actions);
@@ -984,8 +1069,10 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
             states.emplace_back(do_action(states.back(), a));
 
         // 操作
-        int i=get_rand(SZ(states));
-        int j=(i+get_rand(1,SZ(states)))%SZ(states);
+        int width=1+get_rand(min(SZ(states)-1, 20));
+        int i=get_rand(SZ(states)-width);
+        // int j=(i+get_rand(1,SZ(states)))%SZ(states);
+        int j=i+width;
         if(i>j)swap(i,j);
         int length=j-i;
         //
@@ -1015,38 +1102,79 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
     return SZ(actions);
 }
 
-void same_state_check(const VI& action){
+// 同じ状態が現れたら区間をスキップする
+VI same_state_skip(const VI& action){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
-    set<uint64_t> hash;
-    hash.emplace(zhash.hash(initial_state));
+    unordered_map<uint64_t, int> hash_to_idx;
+    unordered_map<int, uint64_t> idx_to_hash;
     auto state=initial_state;
-    for(int a:action){
+    auto h=zhash.hash(state);
+    hash_to_idx[h]=0;
+    idx_to_hash[0]=h;
+    VI result;
+    for(int a: action){
         state=do_action(state,a);
         auto h=zhash.hash(state);
-        assert(!hash.contains(h));
-        hash.emplace(h);
+        if (hash_to_idx.contains(h)){
+            for(int j=hash_to_idx[h]+1; j<=SZ(result); ++j){
+                hash_to_idx.erase(idx_to_hash[j]);
+                idx_to_hash.erase(j);
+            }
+            result.resize(hash_to_idx[h]);
+        }else{
+            result.emplace_back(a);
+            hash_to_idx[h]=SZ(result);
+            idx_to_hash[SZ(result)]=h;
+        }
     }
+    return result;
 }
 
-void loop_check(const VI& action){
+// 短い演算に置き換える
+VI loop_compress(const VI& action){
     int prev=-1, cnt=0;
+    VI result;
     auto state=initial_state;
     for(int a:action){
         state=do_action(state,a);
         if(prev!=a)cnt=1;
         else cnt++;
-        assert(cnt <= to_rotate_num[a < allowed_action_num ? a : (a-allowed_action_num)]/2);
+        result.emplace_back(a);
+        int act=a < allowed_action_num ? a : (a-allowed_action_num);
+        // assert(cnt <= to_rotate_num[act]/2);
+        if(cnt > to_rotate_num[act]/2){
+            result.resize(SZ(result)-cnt);
+            int a_inv=a < allowed_action_num ? (a+allowed_action_num) : (a-allowed_action_num);
+            REP(_, to_rotate_num[act]-cnt)
+                result.emplace_back(a_inv);
+            prev=a_inv;
+        }else
+            prev=a;
     }
+    return result;
 }
 
+// 途中でゴール条件を満たすか確認する
+VI wildcard_finish(const VI& action){
+    VI result;
+    auto state=initial_state;
+    for(int a:action){
+        state=do_action(state,a);
+        result.emplace_back(a);
+        int mistake = get_mistakes(state);
+        if(mistake<=num_wildcards)
+            break;
+    }
+    return result;
+}
 
 
 int ida_solve(const string &filename, bool dual){
     assert(file_exists(filename));
     auto current_best=load_actions(filename);
     dump(SZ(current_best))
-    // same_state_check(current_best);
-    // loop_check(current_best);
+    // same_state_skip(current_best);
+    // loop_compress(current_best);
     // return INF;
 
 
@@ -1066,6 +1194,94 @@ int ida_solve(const string &filename, bool dual){
 }
 
 
+void make_dataset(int i){
+    RandomWalk rw(50);
+    rw.make_dataset(solution_state, 10000);
+    rw.save_data("nn/"+to_string(i)+".csv");
+}
+
+double random_walk(int i){
+    RandomWalk rw_s(100), rw_g(100);
+    rw_s.make_dataset(initial_state, 100000);
+    rw_g.make_dataset(solution_state, 100000);
+
+    unordered_set<uint64_t> visit_s;
+    visit_s.emplace(rw_s.zhash.hash(initial_state));
+    for (auto & actions: rw_s.data){
+        auto s=initial_state;
+        for(int a: actions){
+            s = do_action(s, a);
+            visit_s.emplace(rw_s.zhash.hash(s));
+        }
+    }
+    assert(!visit_s.contains(rw_s.zhash.hash(solution_state)));
+    for (auto & actions: rw_g.data){
+        auto s=solution_state;
+        for(int a: actions){
+            s = do_action(s, a);
+            assert(!visit_s.contains(rw_s.zhash.hash(s)));
+        }
+    }
+    return 0;
+}
+
+VI greedy_improve(const VI &action){
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+    unordered_map<uint64_t, int> hash_to_idx;
+    
+    auto state=initial_state;
+    int idx=0;
+    hash_to_idx[zhash.hash(state)]=idx++;
+    for(int a: action){
+        state = do_action(state, a);
+        hash_to_idx[zhash.hash(state)]=idx++;
+    }
+
+    VI result;
+    state=initial_state;
+    for(idx=0; idx<SZ(action); ){
+        int max_idx = -1;
+        int argmax_act = -1;
+        // 近傍をチェックして同じ状態があればジャンプする
+        // TODO: ループを増やす
+        REP(a, allowed_action_num*2){
+            auto new_state = do_action(state, a);
+            auto new_hash = zhash.hash(new_state);
+            if (hash_to_idx.contains(new_hash)){
+                int tmp_idx = hash_to_idx[new_hash];
+                if (tmp_idx > max_idx){
+                    max_idx = tmp_idx;
+                    argmax_act = a;
+                }
+            }
+        }
+        assert(max_idx>idx);
+        idx = max_idx;
+        result.emplace_back(argmax_act);
+        state = do_action(state, argmax_act);
+    }
+    return result;
+}
+
+int compression(const string &filename){
+    auto actions=load_actions(filename);
+
+    auto result = actions;
+    result = greedy_improve(result);
+    result = wildcard_finish(result);
+    result = same_state_skip(result);
+    result = loop_compress(result);
+
+    int mistake = get_mistakes(simulation(initial_state, result));
+    assert(mistake<=num_wildcards);
+    if(SZ(result)<SZ(actions)){
+        OUT("saved", SZ(actions), "->", SZ(result));
+        save_actions(filename, result);
+    }
+    return SZ(result);
+}
+
+
 const string DATA_DIR = "./data/";
 int main() {
     ChronoTimer timer;
@@ -1075,7 +1291,7 @@ int main() {
     int64_t max_time = 0;
     REP(i, case_num){
     // FOR(i, 30, case_num){
-    // FOR(i, 32, case_num){
+    // FOR(i, 130, case_num){
     // FOR(i, 277, case_num){
     // FOR(i, 284, case_num){
     // FOR(i, 338, case_num){
@@ -1096,16 +1312,17 @@ int main() {
 
         string output_filename="output/"+to_string(i)+".txt";
         // double score=ida_solve(output_filename, false);
-        double score=ida_solve(output_filename, true);
-        
+        // double score=ida_solve(output_filename, true);
+
         // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
         // double score = search(output_filename, true, 0.95);
         // double score = search(output_filename, false, 0.01);
-
+        // make_dataset(i);
         // double score=0;
+        double score=compression(output_filename);
         check_answer(output_filename);
         timer.end();
         if(DEBUG) {
