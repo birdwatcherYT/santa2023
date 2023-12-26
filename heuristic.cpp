@@ -1229,7 +1229,7 @@ double random_walk(int i){
 }
 
 #pragma omp declare reduction(maximum : PII : omp_out=(omp_out>omp_in ? omp_out : omp_in)) initializer(omp_priv = omp_orig)
-VI greedy_improve(const VI &action){
+VI greedy_improve(const VI &action, int depth){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     unordered_map<uint64_t, int> hash_to_idx;
     
@@ -1240,19 +1240,19 @@ VI greedy_improve(const VI &action){
         state = do_action(state, a);
         hash_to_idx[zhash.hash(state)]=idx++;
     }
+    const int total_actions=allowed_action_num*2;
 
     VI result;
     state=initial_state;
     for(idx=0; idx<SZ(action); ){
-        // int max_idx = -1;
-        // int argmax_act = -1;
-        PII max_idx_act(-1,-1);
+        PII max_idx_act{-1,-1};
+        PII max_idx_act2{-1,-1};
+        // PII max_idx_act3{-1,-1};
         // 近傍をチェックして同じ状態があればジャンプする
-        // TODO: ループを増やす
         #pragma omp parallel 
         {
-            #pragma omp for reduction(maximum : max_idx_act)
-            REP(a, allowed_action_num*2){
+            #pragma omp for reduction(maximum: max_idx_act, max_idx_act2)
+            REP(a, total_actions){
                 auto new_state = do_action(state, a);
                 auto new_hash = zhash.hash(new_state);
                 if (hash_to_idx.contains(new_hash)){
@@ -1262,12 +1262,88 @@ VI greedy_improve(const VI &action){
                         max_idx_act.second = a;
                     }
                 }
+                if(num_wildcards!=0 && get_mistakes(new_state)<=num_wildcards){
+                    max_idx_act.first=INF;
+                    max_idx_act.second = a;
+                    // break;
+                }else if(depth>=2){
+                    REP(a2, total_actions){
+                        auto new_state2 = do_action(new_state, a2);
+                        auto new_hash2 = zhash.hash(new_state2);
+                        if (hash_to_idx.contains(new_hash2)){
+                            int tmp_idx = hash_to_idx[new_hash2];
+                            if (tmp_idx > max_idx_act2.first){
+                                max_idx_act2.first=tmp_idx;
+                                max_idx_act2.second=a*total_actions + a2;
+                            }
+                        }
+                        if(num_wildcards!=0 && get_mistakes(new_state2)<=num_wildcards){
+                            max_idx_act2.first=INF;
+                            max_idx_act2.second=a*total_actions + a2;
+                            // break;
+                        }
+                        // else if(depth>=3){
+                        //     REP(a3, total_actions){
+                        //         auto new_state3 = do_action(new_state, a3);
+                        //         auto new_hash3 = zhash.hash(new_state3);
+                        //         if (hash_to_idx.contains(new_hash3)){
+                        //             int tmp_idx = hash_to_idx[new_hash3];
+                        //             if (tmp_idx > max_idx_act3.first){
+                        //                 max_idx_act3.first=tmp_idx;
+                        //                 max_idx_act3.second=a*total_actions*total_actions + a2*total_actions + a3;
+                        //             }
+                        //         }
+                        //         if(num_wildcards!=0 && get_mistakes(new_state3)<=num_wildcards){
+                        //             max_idx_act3.first=INF;
+                        //             max_idx_act3.second=a*total_actions*total_actions + a2*total_actions + a3;
+                        //             // break;
+                        //         }
+                        //     }
+                        // }
+                    }
+                }
             }
         }
         assert(max_idx_act.first>idx);
-        idx = max_idx_act.first;
-        result.emplace_back(max_idx_act.second);
-        state = do_action(state, max_idx_act.second);
+        if(max_idx_act.first==INF){
+            result.emplace_back(max_idx_act.second);
+            break;
+        }else if(max_idx_act2.first==INF){
+            int a=max_idx_act2.second/total_actions, a2=max_idx_act2.second%total_actions;
+            result.emplace_back(a);
+            result.emplace_back(a2);
+            break;
+        // }else if(max_idx_act3.first==INF){
+        //     int a=max_idx_act3.second/(total_actions*total_actions);
+        //     int a2=(max_idx_act3.second-a*total_actions*total_actions)/total_actions;
+        //     int a3=max_idx_act3.second%total_actions;
+        //     result.emplace_back(a);
+        //     result.emplace_back(a2);
+        //     result.emplace_back(a3);
+        //     break;
+        // }else if(max_idx_act3.first > max_idx_act.first+2){
+        //     idx = max_idx_act3.first;
+        //     int a=max_idx_act3.second/(total_actions*total_actions);
+        //     int a2=(max_idx_act3.second-a*total_actions*total_actions)/total_actions;
+        //     int a3=max_idx_act3.second%total_actions;
+        //     result.emplace_back(a);
+        //     result.emplace_back(a2);
+        //     result.emplace_back(a3);
+        //     state = do_action(state, a);
+        //     state = do_action(state, a2);
+        //     state = do_action(state, a3);
+        }else if(max_idx_act2.first > max_idx_act.first+1){
+            idx = max_idx_act2.first;
+            int a=max_idx_act2.second/total_actions, a2=max_idx_act2.second%total_actions;
+            result.emplace_back(a);
+            result.emplace_back(a2);
+            state = do_action(state, a);
+            state = do_action(state, a2);
+        }else{
+            idx = max_idx_act.first;
+            result.emplace_back(max_idx_act.second);
+            state = do_action(state, max_idx_act.second);
+        }
     }
     return result;
 }
@@ -1275,9 +1351,12 @@ VI greedy_improve(const VI &action){
 // 解の圧縮
 int compression(const string &filename){
     auto actions=load_actions(filename);
+    dump(SZ(actions))
 
     auto result = actions;
-    result = greedy_improve(result);
+    // result = greedy_improve(result, 1);
+    result = greedy_improve(result, 2);
+    // result = greedy_improve(result, 3);
     result = wildcard_finish(result);
     result = same_state_skip(result);
     result = loop_compress(result);
@@ -1300,6 +1379,7 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     REP(i, case_num){
+    // RREP(i, case_num){
     // FOR(i, 30, case_num){
     // FOR(i, 130, case_num){
     // FOR(i, 277, case_num){
@@ -1319,6 +1399,7 @@ int main() {
         ifstream ifs(file_path);
         assert(!ifs.fail());
         data_load(ifs);
+        dump(num_wildcards)
 
         string output_filename="output/"+to_string(i)+".txt";
         // double score=ida_solve(output_filename, false);
