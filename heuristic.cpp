@@ -525,6 +525,8 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
     REVERSE(actions);
     return actions;
 }
+
+// pqで状態が近い順に探索する (スタートとゴール定義バージョン)
 optional<VI> search(const VI &start_state, const VI& goal_state, int current_best_size, bool strong_search, 
     int wildcards=0,
     size_t give_up=100000000){
@@ -587,7 +589,7 @@ optional<VI> search(const VI &start_state, const VI& goal_state, int current_bes
     return nullopt;
 }
 
-// 
+// pqで状態が近い順に探索する
 int search(const string &output, bool strong_search, double improve_rate=1){
     // state -> hash
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
@@ -981,6 +983,7 @@ struct RandomWalk{
     }
 };
 
+// 保存した解のチェック
 void check_answer(const string &filename){
     auto actions=load_actions(filename);
     auto result = simulation(initial_state, actions);
@@ -1225,6 +1228,7 @@ double random_walk(int i){
     return 0;
 }
 
+#pragma omp declare reduction(maximum : PII : omp_out=(omp_out>omp_in ? omp_out : omp_in)) initializer(omp_priv = omp_orig)
 VI greedy_improve(const VI &action){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     unordered_map<uint64_t, int> hash_to_idx;
@@ -1240,29 +1244,35 @@ VI greedy_improve(const VI &action){
     VI result;
     state=initial_state;
     for(idx=0; idx<SZ(action); ){
-        int max_idx = -1;
-        int argmax_act = -1;
+        // int max_idx = -1;
+        // int argmax_act = -1;
+        PII max_idx_act(-1,-1);
         // 近傍をチェックして同じ状態があればジャンプする
         // TODO: ループを増やす
-        REP(a, allowed_action_num*2){
-            auto new_state = do_action(state, a);
-            auto new_hash = zhash.hash(new_state);
-            if (hash_to_idx.contains(new_hash)){
-                int tmp_idx = hash_to_idx[new_hash];
-                if (tmp_idx > max_idx){
-                    max_idx = tmp_idx;
-                    argmax_act = a;
+        #pragma omp parallel 
+        {
+            #pragma omp for reduction(maximum : max_idx_act)
+            REP(a, allowed_action_num*2){
+                auto new_state = do_action(state, a);
+                auto new_hash = zhash.hash(new_state);
+                if (hash_to_idx.contains(new_hash)){
+                    int tmp_idx = hash_to_idx[new_hash];
+                    if (tmp_idx > max_idx_act.first){
+                        max_idx_act.first=tmp_idx;
+                        max_idx_act.second = a;
+                    }
                 }
             }
         }
-        assert(max_idx>idx);
-        idx = max_idx;
-        result.emplace_back(argmax_act);
-        state = do_action(state, argmax_act);
+        assert(max_idx_act.first>idx);
+        idx = max_idx_act.first;
+        result.emplace_back(max_idx_act.second);
+        state = do_action(state, max_idx_act.second);
     }
     return result;
 }
 
+// 解の圧縮
 int compression(const string &filename){
     auto actions=load_actions(filename);
 
