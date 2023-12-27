@@ -1354,8 +1354,8 @@ int compression(const string &filename){
     dump(SZ(actions))
 
     auto result = actions;
-    // result = greedy_improve(result, 1);
-    result = greedy_improve(result, 2);
+    result = greedy_improve(result, 1);
+    // result = greedy_improve(result, 2);
     // result = greedy_improve(result, 3);
     result = wildcard_finish(result);
     result = same_state_skip(result);
@@ -1384,6 +1384,7 @@ int main() {
     // FOR(i, 130, case_num){
     // FOR(i, 277, case_num){
     // FOR(i, 284, case_num){
+    // RFOR(i, 282, 283+1){
     // FOR(i, 338, case_num){
     // FOR(i, 335, case_num){
     // FOR(i, 336, case_num){
