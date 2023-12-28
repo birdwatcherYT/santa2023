@@ -664,7 +664,9 @@ int search(const string &output, bool strong_search, double improve_rate=1){
 constexpr int FOUND=-1;
 struct IDAstar{
     ZobristHashing<uint64_t> zhash;
-    int bound, current_best;
+    int current_best;
+    // int bound; 
+    double bound;
     unordered_set<uint64_t> visit;
     VI goal_state;
     int wildcards;
@@ -672,12 +674,19 @@ struct IDAstar{
     int searched;
 
     IDAstar():zhash(SZ(label_mapping), state_length, rand_engine){}
-    int h(const VI& state)const{
-        return max(0, get_mistakes(state, goal_state)-wildcards);
+    double h(const VI& state)const{
+        return max(0.0, (get_mistakes(state, goal_state)-wildcards)/(double)state_length);
     }
-    int h(const VI& state, const VI& state_g, int wild)const{
-        return max(0, get_mistakes(state, state_g)-wild);
+    double h(const VI& state, const VI& state_g, int wild)const{
+        // return max(0, get_mistakes(state, state_g)-wild);
+        return max(0.0, (get_mistakes(state, state_g)-wild)/(double)state_length);
     }
+    // int h(const VI& state)const{
+    //     return max(0, get_mistakes(state, goal_state)-wildcards);
+    // }
+    // int h(const VI& state, const VI& state_g, int wild)const{
+    //     return max(0, get_mistakes(state, state_g)-wild);
+    // }
     int h(const VI& state, const VI& state_g, int wild, const VVI &to_step)const{
         int cnt=0, step=0;
         REP(i, SZ(state)){
@@ -797,19 +806,13 @@ struct IDAstar{
         }
         frontier[next_hash]=path;
 
-        int h_value=h(next, target_state, wild);
+        auto h_value=h(next, target_state, wild);
         if(h_value==0){
             this->actions=path;
             if(!from_start)
                 inverse_action(this->actions);
             path.pop_back();
             return FOUND;
-        }
-        int f = SZ(path) + h_value;
-        bool update=false;
-        if (f <= bound && SZ(path)<this->current_best){
-            st.emplace(0, next_same_action_num, next_hash);
-            update=true;
         }
         if(frontier_target.contains(next_hash)){
             if(from_start){
@@ -826,7 +829,9 @@ struct IDAstar{
             path.pop_back();
             return FOUND;
         }
-        if (update){
+        auto f = SZ(path) + h_value;
+        if (f <= bound && SZ(path)<this->current_best){
+            st.emplace(0, next_same_action_num, next_hash);
             // frontier.erase(hash);
         }
         path.pop_back();
@@ -1072,7 +1077,8 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
             states.emplace_back(do_action(states.back(), a));
 
         // 操作
-        int width=1+get_rand(min(SZ(states)-1, 20));
+        // int width=1+get_rand(min(SZ(states)-1, 20));
+        int width=1+get_rand(min(SZ(states)-1, 12));
         int i=get_rand(SZ(states)-width);
         // int j=(i+get_rand(1,SZ(states)))%SZ(states);
         int j=i+width;
@@ -1084,7 +1090,8 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
         dump(length)
         // auto path=search(states[i], states[j], length, false, states[j]==solution_state ? num_wildcards : 0);
         // auto path=idastar.ida_star(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
-        auto path=idastar.ida_star_bidirect(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
+        // auto path=idastar.ida_star_bidirect(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
+        auto path=idastar.ida_star_bidirect(states[i], states[j], (length+1)/2, states[j]==solution_state ? num_wildcards : 0);
         
         if(!path)continue;
         const auto &res = path.value();
@@ -1134,6 +1141,7 @@ VI same_state_skip(const VI& action){
 }
 
 // 短い演算に置き換える
+// aaa → -a
 VI loop_compress(const VI& action){
     int prev=-1, cnt=0;
     VI result;
@@ -1183,7 +1191,9 @@ int ida_solve(const string &filename, bool dual){
 
     IDAstar idastar;
     auto res = dual ?
-          idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best), num_wildcards)
+        //   idastar.ida_star_bidirect(initial_state, solution_state, SZ(current_best), num_wildcards)
+        // NOTE: wildcardがあるときは深さ制限すると現在よりも悪化する解しか見つからず失敗する可能性がある
+          idastar.ida_star_bidirect(initial_state, solution_state, (SZ(current_best)+1)/2, num_wildcards)
         : idastar.ida_star(initial_state, solution_state, SZ(current_best), num_wildcards);
     
     if(res){
@@ -1370,6 +1380,186 @@ int compression(const string &filename){
     return SZ(result);
 }
 
+struct WreathSolver{
+    int a;// 右 red
+    int b;// 左 blue
+    int c;
+    int Cindex1, Cindex2;
+    int l_stepsize;
+    int r_stepsize;
+    VI matched;
+    VI leftindex;
+    VI rightindex;
+    WreathSolver(){
+        a=label_mapping["A"];// 右 red
+        b=label_mapping["B"];// 左 blue
+        c=label_mapping["C"];
+        Cindex1=-1, Cindex2=-1;
+        // A B A C A B B B A C
+        // C A C A A A B B B B
+        REP(i, state_length)if(solution_state[i]==c){
+            if(Cindex1<0) Cindex1=i;
+            else if(Cindex2<0) Cindex2=i;
+            else assert(false);
+        }
+        l_stepsize=0;
+        r_stepsize=0;
+        auto state=solution_state;
+        REP(act, allowed_action_num)
+            REP(i, to_rotate_num[act]){
+                state=do_action(state, 0);
+                if(state[Cindex1]==c||state[Cindex2]==c){
+                    if(act==0) l_stepsize=i+1;
+                    else r_stepsize=i+1;
+                    break;
+                }
+            }
+        dump(l_stepsize)
+        dump(r_stepsize)
+
+        REP(act, allowed_action_num){
+            VI index(state_length);
+            ARANGE(index);
+            if(act==0)leftindex.emplace_back(index[Cindex1]);
+            else rightindex.emplace_back(index[Cindex1]);
+            REP(i, to_rotate_num[act]-1){
+                index=do_action(index, act);
+                if(act==0)leftindex.emplace_back(index[Cindex1]);
+                else rightindex.emplace_back(index[Cindex1]);
+            }
+        }
+        dump(leftindex)
+        dump(rightindex)
+        matching(initial_state);
+    }
+    void matching(const VI& state){
+        matched.assign(state_length, -1);
+        REP(act, allowed_action_num){
+            auto &index= (act==0) ? leftindex : rightindex;
+            int stepsize = (act==0) ? l_stepsize : r_stepsize;
+            int color = (act==0) ? b : a;
+            REP(i, SZ(index)){
+                int I=index[i];
+                if(matched[I]<0){
+                    int J=index[(i+stepsize)%SZ(index)];
+                    if(matched[J]<0 && state[I]==color && state[J]==color){
+                        matched[J]=I, matched[I]=J;
+                        continue;
+                    }
+                    J=index[(i-stepsize+SZ(index))%SZ(index)];
+                    if(matched[J]<0 && state[I]==color && state[J]==color){
+                        matched[J]=I, matched[I]=J;
+                        continue;
+                    }
+                }
+            }
+        }
+        dump(matched);
+    }
+
+    tuple<int, bool, bool> get_loop_num(const VI& istate, int act){
+        int color = act==0 ? b : a;
+        auto state=istate;
+        int num=to_rotate_num[act]-1;
+        if(get_mistakes(state)<=num_wildcards)
+            return {0, true, false};
+        else if(state[Cindex1]==color && color==state[Cindex2])
+            return {0, false, false};
+        REP(loop, num){
+            state=do_action(state, act);
+            bool inv=2*(loop+1) > to_rotate_num[act];
+            if(get_mistakes(state)<=num_wildcards)
+                return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), true, inv};
+            else if(state[Cindex1]==color && color==state[Cindex2])
+                return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), false, inv};
+        }
+        return {-1, false, false};
+    }
+    optional<VI> solve(int current_best_size){
+        // lを繰り返して、2つのaを見つける → rを回転する
+        // rを繰り返して、2つのbを見つける → lを回転する
+        VI actions;
+        auto state=initial_state;
+        while(1){
+            auto [left_num, lfin, linv]=get_loop_num(state, 0);
+            auto [right_num, rfin, rinv]=get_loop_num(state, 1);
+            
+            if(lfin && rfin){
+                if(left_num<right_num)
+                    REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
+                else
+                    REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
+                break;
+            }else if(lfin){
+                REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
+                break;
+            }else if(rfin){
+                REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
+                break;
+            }else if(left_num>0 && right_num>0){
+                if(left_num<right_num)
+                    REP(_, left_num){
+                        int act=linv ? 2 : 0;
+                        actions.emplace_back(act);
+                        state=do_action(state, act);
+                    }
+                else
+                    REP(_, right_num){
+                        int act=rinv ? 3 : 1;
+                        actions.emplace_back(act);
+                        state=do_action(state, act);
+                    }
+            }else if(left_num>0){
+                REP(_, left_num){
+                    int act=linv ? 2 : 0;
+                    actions.emplace_back(act);
+                    state=do_action(state, act);
+                }
+            }else if(right_num>0){
+                REP(_, right_num){
+                    int act=rinv ? 3 : 1;
+                    actions.emplace_back(act);
+                    state=do_action(state, act);
+                }
+            }else{
+                dump(action_decode(actions))
+                dump(state)
+
+                // IDAstar idastar;
+                // bool dual=false;
+                // auto res = dual ?
+                //     idastar.ida_star_bidirect(state, solution_state, current_best_size, num_wildcards)
+                //     : idastar.ida_star(state, solution_state, current_best_size, num_wildcards);
+                auto res=search(state, solution_state, current_best_size, false, num_wildcards);
+                if(res){
+                    auto& add = res.value();
+                    actions.insert(actions.end(), add.begin(), add.end());
+                    return actions;
+                }
+                return nullopt;
+            }
+            // dump(state)
+        }
+        return actions;
+    }
+};
+
+int run_WreathSolver(const string &filename){
+    assert(file_exists(filename));
+    auto current_best=load_actions(filename);
+    dump(SZ(current_best))
+    
+    WreathSolver solver;
+    auto res=solver.solve(SZ(current_best));
+    if(res){
+        if(SZ(res.value())<SZ(current_best)){
+            OUT("saved", SZ(current_best), "->", SZ(res.value()));
+            save_actions(filename, res.value());
+        }
+        return SZ(res.value());
+    }
+    return INF;
+}
 
 const string DATA_DIR = "./data/";
 int main() {
@@ -1378,16 +1568,21 @@ int main() {
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    REP(i, case_num){
+    // REP(i, case_num){
     // RREP(i, case_num){
     // FOR(i, 30, case_num){
     // FOR(i, 130, case_num){
     // FOR(i, 277, case_num){
-    // FOR(i, 284, case_num){
-    // RFOR(i, 282, 283+1){
+    // FOR(i, 329, case_num){
+    // FOR(i, 331, case_num){
     // FOR(i, 338, case_num){
-    // FOR(i, 335, case_num){
+    FOR(i, 339, case_num){
+    // RFOR(i, 282, 283+1){
+    // FOR(i, 328, case_num){
+    // FOR(i, 329, case_num){
+    // FOR(i, 334, case_num){
     // FOR(i, 336, case_num){
+    // FOR(i, 337, case_num){
     // RREP(i, 336+1){
     // RREP(i, 333+1){
     // FOR(i, 332, case_num){
@@ -1406,7 +1601,7 @@ int main() {
         // double score=ida_solve(output_filename, false);
         // double score=ida_solve(output_filename, true);
 
-        // double score = annealing(output_filename, timer, 100, 100);
+        double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
@@ -1414,7 +1609,9 @@ int main() {
         // double score = search(output_filename, false, 0.01);
         // make_dataset(i);
         // double score=0;
-        double score=compression(output_filename);
+        // double score=run_WreathSolver(output_filename);
+        // exit(0);
+        // double score=compression(output_filename);
         check_answer(output_filename);
         timer.end();
         if(DEBUG) {
