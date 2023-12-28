@@ -154,8 +154,8 @@ template <class Head> void IN(Head&& head) {cin >> head;}
 template <class Head, class... Tail> void IN(Head&& head, Tail&&... tail) {cin >> head;IN(forward<Tail>(tail)...);}
 
 // 乱数
-// const int SEED = random_device()();
-constexpr int SEED = 1;
+const int SEED = random_device()();
+// constexpr int SEED = 1;
 mt19937 rand_engine(SEED);
 // [0,1)
 inline double get_rand(){
@@ -1078,7 +1078,8 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
 
         // 操作
         // int width=1+get_rand(min(SZ(states)-1, 20));
-        int width=1+get_rand(min(SZ(states)-1, 12));
+        // int width=1+get_rand(min(SZ(states)-1, 12));
+        int width=1+get_rand(min(SZ(states)-1, 10));
         int i=get_rand(SZ(states)-width);
         // int j=(i+get_rand(1,SZ(states)))%SZ(states);
         int j=i+width;
@@ -1569,19 +1570,22 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     // REP(i, case_num){
-    // RREP(i, case_num){
+    RREP(i, case_num){
     // FOR(i, 30, case_num){
+    // FOR(i, 30, case_num){
+    // FOR(i, 200, case_num){
     // FOR(i, 130, case_num){
     // FOR(i, 277, case_num){
     // FOR(i, 329, case_num){
     // FOR(i, 331, case_num){
     // FOR(i, 338, case_num){
-    FOR(i, 339, case_num){
-    // RFOR(i, 282, 283+1){
+    // FOR(i, 338, case_num){
+    // FOR(i, 284, case_num){
     // FOR(i, 328, case_num){
     // FOR(i, 329, case_num){
     // FOR(i, 334, case_num){
-    // FOR(i, 336, case_num){
+    // FOR(i, 348, case_num){
+    // FOR(i, 353, case_num){
     // FOR(i, 337, case_num){
     // RREP(i, 336+1){
     // RREP(i, 333+1){
@@ -1595,6 +1599,7 @@ int main() {
         ifstream ifs(file_path);
         assert(!ifs.fail());
         data_load(ifs);
+        dump(puzzle_type)
         dump(num_wildcards)
 
         string output_filename="output/"+to_string(i)+".txt";
