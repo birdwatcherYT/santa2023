@@ -95,7 +95,6 @@ DFSの探索順序を評価値順にする
 
                   A
 A A A A A A A A A B B B B B B B B B C C C C C C C C C D D D D D D D D D E E E E E E E E E F F F F F F F F F -->
-if(h_value==0)のいち
 メモリおさえる
 
 
@@ -141,3 +140,7 @@ pqの方もdoubleにする
 
 双方向ビームサーチ
     top K個に絞る
+
+大きいグラフを削減するほうが効率的
+グラフごとに区間サイズを変える
+

@@ -482,7 +482,7 @@ string action_decode(const VI& actions){
 VI inverse_action(const VI& path){
     auto action=path;
     for(int &a:action)
-        a = a < allowed_action_num ? (a+allowed_action_num): (a-allowed_action_num);
+        a = (a < allowed_action_num) ? (a+allowed_action_num): (a-allowed_action_num);
     REVERSE(action);
     return action;
 }
@@ -661,16 +661,22 @@ int search(const string &output, bool strong_search, double improve_rate=1){
     return INF;
 }
 
-constexpr int FOUND=-1;
+enum{
+    FOUND,
+    FAIL
+};
+
 struct IDAstar{
     ZobristHashing<uint64_t> zhash;
-    int current_best;
+    int max_action_size;
     // int bound; 
     double bound;
+    VI actions;
+
+    // 一方向探索時の変数
     unordered_set<uint64_t> visit;
     VI goal_state;
     int wildcards;
-    VI actions;
     int searched;
 
     IDAstar():zhash(SZ(label_mapping), state_length, rand_engine){}
@@ -687,19 +693,10 @@ struct IDAstar{
     // int h(const VI& state, const VI& state_g, int wild)const{
     //     return max(0, get_mistakes(state, state_g)-wild);
     // }
-    int h(const VI& state, const VI& state_g, int wild, const VVI &to_step)const{
-        int cnt=0, step=0;
-        REP(i, SZ(state)){
-            cnt += (state[i]!=state_g[i]);
-            step += to_step[i][state[i]];
-        }
-        if(cnt<=wild)return 0;
-        return step;
-    }
-    optional<VI> ida_star(const VI &init_state, const VI &goal_state, int current_best, int wildcards){
+    optional<VI> ida_star(const VI &init_state, const VI &goal_state, int max_action_size, int wildcards){
         this->wildcards=wildcards;
         this->goal_state=goal_state;
-        this->current_best=current_best;
+        this->max_action_size=max_action_size;
         this->bound = h(init_state);
         uint64_t init_hash=zhash.hash(init_state);
         visit.clear();
@@ -716,68 +713,76 @@ struct IDAstar{
             dump(searched)
         }
     }
-    optional<VI> ida_star_bidirect(const VI &init_state, const VI &goal_state, int current_best, int wild){
-        this->current_best=current_best;
-        this->bound = h(init_state, goal_state, wild);
-        // uint64_t init_hash=zhash.hash(init_state);
-        // visit.clear();
-        // visit.emplace(init_hash);
+    optional<VI> ida_star_bidirect(const VI &start_state, const VI &goal_state, int max_action_size, int wild){
+        this->max_action_size=max_action_size;
+        this->bound = h(start_state, goal_state, wild);
+
+        auto hash_s=zhash.hash(start_state);
+        auto hash_g=zhash.hash(goal_state);
+        stack<tuple<int, int, uint64_t>> st_s, st_g;
+        // queue<tuple<int, int, uint64_t>> st_s, st_g;
+        st_s.emplace(0, 0, hash_s);
+        st_g.emplace(0, 0, hash_g);
+
+        unordered_map<uint64_t, VI> frontier_s, frontier_g;
+        frontier_s[hash_s]=VI();
+        frontier_g[hash_g]=VI();
+
+        // MAXPQ<pair<double, uint64_t>> score_s, score_g;
+
         while(1){
             dump(bound)
-            int t = bidirectional_search(init_state, goal_state, wild);
-            if (t == FOUND) return actions;
-            bound++;
-        }
-    }
-    // void expand(stack<tuple<VI, VI, int, int>> &st, unordered_set<uint64_t>& frontier, const VI& state, VI& path, int same_action_num){
-    bool expand(stack<tuple<int, uint64_t>> &st, unordered_map<uint64_t, VI>& frontier, const VI& state, VI& path, int same_action_num){
-        bool update=false;
-        if(SZ(path) >= current_best) return update;
-        REP(a, allowed_action_num*2){
-            int next_same_action_num=1;
-            if(!path.empty()){
-                // 逆操作
-                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
-                    continue;
-                // グループ順序
-                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
-                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
-                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
-                    continue;
-                // より短い別の動作で置換できる場合
-                if(path.back()==a)
-                    next_same_action_num = same_action_num+1;
-                if(2*next_same_action_num>to_rotate_num[act] 
-                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
-                    continue;
+            stack<tuple<int, int, uint64_t>> next_st_s, next_st_g;
+            // queue<tuple<int, int, uint64_t>> next_st_s, next_st_g;
+            while(!st_s.empty() || !st_g.empty()){
+                if(!st_s.empty()){
+                    // if(FOUND==next_node(st_s, next_st_s, frontier_s, score_s, start_state, goal_state, wild, frontier_g, true))
+                    if(FOUND==next_node(st_s, next_st_s, frontier_s, start_state, goal_state, wild, frontier_g, true))
+                        return actions;
+                }
+                if(!st_g.empty()){
+                    // if(FOUND==next_node(st_g, next_st_g, frontier_g, score_g, goal_state, start_state, 0, frontier_s, false))
+                    if(FOUND==next_node(st_g, next_st_g, frontier_g, goal_state, start_state, 0, frontier_s, false))
+                        return actions;
+                }
             }
-            auto next=do_action(state, a);
-            auto next_hash=zhash.hash(next);
-            // if(frontier.contains(next_hash))// 双方向IDAでなぜか発見できないパターン
-            if(frontier.contains(next_hash) && SZ(frontier[next_hash])<=SZ(path)+1)
-                continue;
-            // if (visit.contains(next_hash))
-            //     continue;
-            // visit.emplace(next_hash);
-            path.emplace_back(a);
-            // if (FOUND==t) {return FOUND;}
-            st.emplace(next_same_action_num, next_hash);
-            update=true;
-            // frontier.emplace(next_hash);
-            frontier[next_hash]=path;
-            path.pop_back();
-            // visit.erase(next_hash);
+            dump(next_st_s.size())
+            dump(frontier_s.size())
+            // st_s=next_st_s, st_g=next_st_g;
+            while(!next_st_s.empty()){
+                st_s.emplace(next_st_s.top());
+                next_st_s.pop();
+            }
+            while(!next_st_g.empty()){
+                st_g.emplace(next_st_g.top());
+                next_st_g.pop();
+            }
+            bound++;
+            if(bound>=max_action_size*2)
+                break;
         }
-        return update;
+        return nullopt;
     }
-    int next_node(stack<tuple<int, int, uint64_t>> &st, unordered_map<uint64_t, VI>& frontier, 
-    const VI& init_state,
-    const VI& target_state, int wild, unordered_map<uint64_t, VI>& frontier_target,
-    bool from_start){
+    int next_node(
+        stack<tuple<int, int, uint64_t>> &st,
+        stack<tuple<int, int, uint64_t>> &next_st,
+        // queue<tuple<int, int, uint64_t>> &st,
+        // queue<tuple<int, int, uint64_t>> &next_st,
+        unordered_map<uint64_t, VI>& frontier,
+        // MAXPQ<pair<double, uint64_t>> &score,
+        const VI& init_state,
+        const VI& target_state, 
+        int wild, 
+        unordered_map<uint64_t, VI>& frontier_target, 
+        bool from_start
+    ){
         auto[a, same_action_num, hash]=st.top();st.pop();
+        // auto[a, same_action_num, hash]=st.front();st.pop();
         if(a+1<allowed_action_num*2)
             st.emplace(a+1, same_action_num, hash);
         assert(frontier.contains(hash));
+        // if(!frontier.contains(hash))
+        //     return INF;
         auto &path=frontier[hash];
         // auto path=frontier[hash];
         int next_same_action_num=1;
@@ -808,9 +813,10 @@ struct IDAstar{
 
         auto h_value=h(next, target_state, wild);
         if(h_value==0){
-            this->actions=path;
+            OUT("find0!!!");
+            this->actions = path;
             if(!from_start)
-                inverse_action(this->actions);
+                this->actions=inverse_action(this->actions);
             path.pop_back();
             return FOUND;
         }
@@ -829,35 +835,18 @@ struct IDAstar{
             path.pop_back();
             return FOUND;
         }
+        // score.emplace(h_value, next_hash);
+        // if(score.size()>10000000L){
+        //     auto[_, maxhash]=score.top();score.pop();
+        //     frontier.erase(maxhash);
+        // }
         auto f = SZ(path) + h_value;
-        if (f <= bound && SZ(path)<this->current_best){
+        if (f <= bound && SZ(path) < this->max_action_size){
             st.emplace(0, next_same_action_num, next_hash);
-            // frontier.erase(hash);
+        }else{
+            next_st.emplace(0, next_same_action_num, next_hash);
         }
         path.pop_back();
-        return INF;
-    }
-    int bidirectional_search(const VI &start_state, const VI &goal_state, int wild){
-        stack<tuple<int, int, uint64_t>> st_s, st_g;
-        st_s.emplace(0, 0, zhash.hash(start_state));
-        st_g.emplace(0, 0, zhash.hash(goal_state));
-
-        unordered_map<uint64_t, VI> frontier_s, frontier_g;
-        frontier_s[zhash.hash(start_state)]=VI();
-        frontier_g[zhash.hash(goal_state)]=VI();
-
-        while(!st_s.empty() || !st_g.empty()){
-            // dump(SZ(st_s))
-            // dump(SZ(st_g))
-            if(!st_s.empty()){
-                if(FOUND==next_node(st_s, frontier_s, start_state, goal_state, wild, frontier_g, true))
-                    return FOUND;
-            }
-            if(!st_g.empty()){
-                if(FOUND==next_node(st_g, frontier_g, goal_state, start_state, 0, frontier_s, false))
-                    return FOUND;
-            }
-        }
         return INF;
     }
     int search(VI &state, VI &path, int g, int same_action_num){
@@ -869,7 +858,7 @@ struct IDAstar{
             return FOUND;
         }
         int minval=INF;
-        if(g >= current_best) return minval;
+        if(g >= max_action_size) return minval;
         REP(a, allowed_action_num*2){
             int next_same_action_num=1;
             if(!path.empty()){
@@ -996,69 +985,6 @@ void check_answer(const string &filename){
     assert(mistake<=num_wildcards);
 }
 
-// 状態
-struct State {
-    VI actions;
-    // actions[i]適用結果はstates[i+1]に格納される
-    VVI states;
-    VI mistakes;
-    double score;
-    double annealing_score;
-
-    State(){}
-    void initialize(const VI &init_actions){
-        if(DEBUG) OUT("initialize");
-        // 初期解 ----------
-        actions=init_actions;
-        states.clear();
-        mistakes.clear();
-        states.emplace_back(initial_state);
-        mistakes.emplace_back(get_mistakes(states.back()));
-        simulate(0);
-    }
-    void simulate(int from){
-        // 初期状態
-        states.resize(from+1);
-        mistakes.resize(from+1);
-        FOR(i, from, SZ(actions)){
-            int a = actions[i];
-            states.emplace_back(do_action(states.back(), a));
-            mistakes.emplace_back(get_mistakes(states.back()));
-        }// ----------------
-    }
-
-    tuple<double, double> calc_score() {
-        score = 0;
-        annealing_score = 0;
-        // スコア ----------
-        score=actions.size();
-        annealing_score=score + 100*max(0, mistakes.back()-num_wildcards);
-        // -----------------
-        return {score, annealing_score};
-    }
-    void print_answer() const {
-        // 答え表示 ---------
-        OUT(action_decode(actions));
-        // -----------------
-    }
-    // ターンがあるような場合
-    vector<State> next_states() const {
-        // 未実装
-        vector<State> next;
-        return next;
-    }
-    bool operator<(const State& s) const {
-        return score < s.score;
-    }
-    bool operator>(const State& s) const {
-        return score > s.score;
-    }
-};
-
-// 時間制限
-constexpr int TIME_LIMIT = INF;
-
-
 double annealing(const string &filename, ChronoTimer &timer, int loop_max, int verbose){
     assert(file_exists(filename));
     auto actions=load_actions(filename);
@@ -1077,9 +1003,12 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
             states.emplace_back(do_action(states.back(), a));
 
         // 操作
+        int width=1+get_rand(min(SZ(states)-1, 30));
         // int width=1+get_rand(min(SZ(states)-1, 20));
+        // int width=1+get_rand(min(SZ(states)-1, 14));
         // int width=1+get_rand(min(SZ(states)-1, 12));
-        int width=1+get_rand(min(SZ(states)-1, 10));
+        // int width=1+get_rand(min(SZ(states)-1, 10));
+        // int width=1+get_rand(min(SZ(states)-1, 8));
         int i=get_rand(SZ(states)-width);
         // int j=(i+get_rand(1,SZ(states)))%SZ(states);
         int j=i+width;
@@ -1258,7 +1187,6 @@ VI greedy_improve(const VI &action, int depth){
     for(idx=0; idx<SZ(action); ){
         PII max_idx_act{-1,-1};
         PII max_idx_act2{-1,-1};
-        // PII max_idx_act3{-1,-1};
         // 近傍をチェックして同じ状態があればジャンプする
         #pragma omp parallel 
         {
@@ -1293,24 +1221,6 @@ VI greedy_improve(const VI &action, int depth){
                             max_idx_act2.second=a*total_actions + a2;
                             // break;
                         }
-                        // else if(depth>=3){
-                        //     REP(a3, total_actions){
-                        //         auto new_state3 = do_action(new_state, a3);
-                        //         auto new_hash3 = zhash.hash(new_state3);
-                        //         if (hash_to_idx.contains(new_hash3)){
-                        //             int tmp_idx = hash_to_idx[new_hash3];
-                        //             if (tmp_idx > max_idx_act3.first){
-                        //                 max_idx_act3.first=tmp_idx;
-                        //                 max_idx_act3.second=a*total_actions*total_actions + a2*total_actions + a3;
-                        //             }
-                        //         }
-                        //         if(num_wildcards!=0 && get_mistakes(new_state3)<=num_wildcards){
-                        //             max_idx_act3.first=INF;
-                        //             max_idx_act3.second=a*total_actions*total_actions + a2*total_actions + a3;
-                        //             // break;
-                        //         }
-                        //     }
-                        // }
                     }
                 }
             }
@@ -1367,7 +1277,6 @@ int compression(const string &filename){
     auto result = actions;
     result = greedy_improve(result, 1);
     // result = greedy_improve(result, 2);
-    // result = greedy_improve(result, 3);
     result = wildcard_finish(result);
     result = same_state_skip(result);
     result = loop_compress(result);
@@ -1563,42 +1472,61 @@ int run_WreathSolver(const string &filename){
 }
 
 const string DATA_DIR = "./data/";
+const set<string> TARGET{
+       "cube_2/2/2",
+       "cube_3/3/3",
+       "cube_4/4/4",
+       "cube_5/5/5",
+       "cube_6/6/6",
+       "cube_7/7/7",
+       "cube_8/8/8",
+       "cube_9/9/9",
+       "cube_10/10/10",
+       "cube_19/19/19",
+       "cube_33/33/33",
+       "wreath_6/6",
+       "wreath_7/7",
+       "wreath_12/12",
+       "wreath_21/21",
+       "wreath_33/33",
+       "wreath_100/100",
+       "globe_1/8",
+       "globe_1/16",
+       "globe_2/6",
+       "globe_3/4",
+       "globe_6/4",
+       "globe_6/8",
+       "globe_6/10",
+       "globe_3/33",
+       "globe_8/25"
+};
 int main() {
     ChronoTimer timer;
     int case_num = 398;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    // REP(i, case_num){
-    RREP(i, case_num){
-    // FOR(i, 30, case_num){
-    // FOR(i, 30, case_num){
-    // FOR(i, 200, case_num){
-    // FOR(i, 130, case_num){
-    // FOR(i, 277, case_num){
-    // FOR(i, 329, case_num){
-    // FOR(i, 331, case_num){
-    // FOR(i, 338, case_num){
-    // FOR(i, 338, case_num){
+    REP(i, case_num){
+    // RREP(i, case_num){
+    // FOR(i,  30, case_num){
+    // FOR(i,  150, case_num){
     // FOR(i, 284, case_num){
-    // FOR(i, 328, case_num){
-    // FOR(i, 329, case_num){
-    // FOR(i, 334, case_num){
     // FOR(i, 348, case_num){
     // FOR(i, 353, case_num){
     // FOR(i, 337, case_num){
-    // RREP(i, 336+1){
-    // RREP(i, 333+1){
+    // FOR(i, 358, case_num){
     // FOR(i, 332, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
-        OUT("data_load", i);
         string input_filename = to_string(i) + ".txt";
         string file_path = DATA_DIR + input_filename;
         ifstream ifs(file_path);
         assert(!ifs.fail());
         data_load(ifs);
+        if(!TARGET.contains(puzzle_type))
+            continue;
+        OUT("id", i);
         dump(puzzle_type)
         dump(num_wildcards)
 
@@ -1606,14 +1534,14 @@ int main() {
         // double score=ida_solve(output_filename, false);
         // double score=ida_solve(output_filename, true);
 
-        double score = annealing(output_filename, timer, 100, 100);
+        // double score = annealing(output_filename, timer, 1000, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
         // double score = search(output_filename, true, 0.95);
         // double score = search(output_filename, false, 0.01);
         // make_dataset(i);
-        // double score=0;
+        double score=0;
         // double score=run_WreathSolver(output_filename);
         // exit(0);
         // double score=compression(output_filename);
