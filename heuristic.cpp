@@ -526,10 +526,8 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
     return actions;
 }
 
-// pqで状態が近い順に探索する (スタートとゴール定義バージョン)
-optional<VI> search(const VI &start_state, const VI& goal_state, int current_best_size, bool strong_search, 
-    int wildcards=0,
-    size_t give_up=100000000){
+// pqで状態が近い順に探索する
+optional<VI> search(const VI &start_state, const VI& goal_state, int current_best_size, bool strong_search, int wildcards=0, size_t give_up=100000000){
     // state -> hash
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
     // hash -> {length, prev_hash, action_id}
@@ -591,78 +589,29 @@ optional<VI> search(const VI &start_state, const VI& goal_state, int current_bes
 
 // pqで状態が近い順に探索する
 int search(const string &output, bool strong_search, double improve_rate=1){
-    // state -> hash
-    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
-    // hash -> {length, prev_hash, action_id}
-    unordered_map<uint64_t, tuple<int, uint64_t,int>> pushed;
-    // mistake, length, hash
-    MINPQ<tuple<int, int, uint64_t>> pq;
     // 保存してあるベスト解
     int current_best_size=INF;
     if(file_exists(output)){
         current_best_size=SZ(load_actions(output));
         dump(current_best_size)
     }
-    auto init_hash = zhash.hash(initial_state);
-    pushed[init_hash]={0, 0, -1};
-    pq.emplace(get_mistakes(initial_state), 0, init_hash);
-    auto goal_hash = zhash.hash(solution_state);
-    int searched=0;
-    while(!pq.empty()){
-        auto [mistake, length, hash] = pq.top(); pq.pop();
-        searched++;
-        if(searched%100000==0)
-            dump(searched)
-        if(goal_hash==hash){
-            auto actions=construct_actions(init_hash, hash, pushed);
-            assert(simulation(initial_state, actions)==solution_state);
-            OUT("solved");
-            if(SZ(actions)<current_best_size){
-                OUT("saved", current_best_size, "->", SZ(actions));
-                save_actions(output, actions);
-            }
-            return length;
+    auto res=search(initial_state, solution_state, current_best_size, false, num_wildcards);
+    if (res){
+        auto &actions=res.value();
+        assert(simulation(initial_state, actions)==solution_state);
+        OUT("solved");
+        if(SZ(actions)<current_best_size){
+            OUT("saved", current_best_size, "->", SZ(actions));
+            save_actions(output, actions);
         }
-        if(num_wildcards!=0 && mistake <= num_wildcards){
-            OUT("solved using wildcards");
-            auto actions=construct_actions(init_hash, hash, pushed);
-            if(SZ(actions)<current_best_size){
-                OUT("saved", current_best_size, "->", SZ(actions));
-                save_actions(output, actions);
-            }
-            return length;
-        }
-        if(get<0>(pushed[hash])<length) continue;
-        auto actions=construct_actions(init_hash, hash, pushed);
-        auto state=simulation(initial_state, actions);
-        if(length<current_best_size*improve_rate){
-            REP(a, allowed_action_num*2){
-                auto next = do_action(state, a);
-                auto next_hash = zhash.hash(next);
-                if(strong_search){
-                    if(pushed.contains(next_hash) && get<0>(pushed[next_hash])<=length)
-                        continue;
-                }else{
-                    if(pushed.contains(next_hash))
-                        continue;
-                }
-                pushed[next_hash]={length+1, hash, a};
-                pq.emplace(get_mistakes(next), length+1, next_hash);
-                if(pq.size()%5000000==0)
-                    dump(pq.size())
-                if(pushed.size()%5000000==0)
-                    dump(pushed.size())
-                // // 打ち切り
-                // if(pq.size()>100000000||pushed.size()>100000000)
-                //     return INF;
-            }
-        }
+        return SZ(actions);
     }
     return INF;
 }
 
 enum{
     FOUND,
+    OUTSIDE_FOUND,
     FAIL
 };
 
@@ -716,34 +665,42 @@ struct IDAstar{
     optional<VI> ida_star_bidirect(const VI &start_state, const VI &goal_state, int max_action_size, int wild){
         this->max_action_size=max_action_size;
         this->bound = h(start_state, goal_state, wild);
+        // this->bound = INF;
 
         auto hash_s=zhash.hash(start_state);
         auto hash_g=zhash.hash(goal_state);
         stack<tuple<int, int, uint64_t>> st_s, st_g;
         // queue<tuple<int, int, uint64_t>> st_s, st_g;
+        // MINPQ<tuple<double, int, int, int, uint64_t>> st_s, st_g;
         st_s.emplace(0, 0, hash_s);
         st_g.emplace(0, 0, hash_g);
+        // st_s.emplace(hash_s, 0, 0, 0, hash_s);
+        // st_g.emplace(hash_g, 0, 0, 0, hash_g);
 
         unordered_map<uint64_t, VI> frontier_s, frontier_g;
         frontier_s[hash_s]=VI();
         frontier_g[hash_g]=VI();
 
         // MAXPQ<pair<double, uint64_t>> score_s, score_g;
+        unordered_map<uint64_t, int> outside_s, outside_g;
 
         while(1){
             dump(bound)
             stack<tuple<int, int, uint64_t>> next_st_s, next_st_g;
             // queue<tuple<int, int, uint64_t>> next_st_s, next_st_g;
+            // MINPQ<tuple<double, int, int, int, uint64_t>> next_st_s, next_st_g;
             while(!st_s.empty() || !st_g.empty()){
                 if(!st_s.empty()){
                     // if(FOUND==next_node(st_s, next_st_s, frontier_s, score_s, start_state, goal_state, wild, frontier_g, true))
-                    if(FOUND==next_node(st_s, next_st_s, frontier_s, start_state, goal_state, wild, frontier_g, true))
-                        return actions;
+                    // if(FOUND==next_node(st_s, next_st_s, frontier_s, start_state, goal_state, wild, frontier_g, true))
+                    int r=next_node(st_s, next_st_s, frontier_s, start_state, goal_state, wild, frontier_g, outside_g, true, 0);
+                    if(r>=0)return actions;
                 }
                 if(!st_g.empty()){
                     // if(FOUND==next_node(st_g, next_st_g, frontier_g, score_g, goal_state, start_state, 0, frontier_s, false))
-                    if(FOUND==next_node(st_g, next_st_g, frontier_g, goal_state, start_state, 0, frontier_s, false))
-                        return actions;
+                    // if(FOUND==next_node(st_g, next_st_g, frontier_g, goal_state, start_state, 0, frontier_s, false))
+                    int r=next_node(st_g, next_st_g, frontier_g, goal_state, start_state, 0, frontier_s, outside_s, false, 0);
+                    if(r>=0) return actions;
                 }
             }
             dump(next_st_s.size())
@@ -763,23 +720,83 @@ struct IDAstar{
         }
         return nullopt;
     }
+    
+    optional<tuple<VI, int, int>> ida_star_bidirect(const VVI &states, int i, int j){
+        int length=j-i;
+        auto &start_state=states[i], &goal_state=states[j];
+        int wild = states[j]==solution_state ? num_wildcards : 0;
+
+        unordered_map<uint64_t, int> outside_s, outside_g;
+        REP(k, SZ(states)){
+            if(k<i) outside_s[zhash.hash(states[k])]=k;
+            else if(k>j) outside_g[zhash.hash(states[k])]=k;
+        }
+
+        this->max_action_size=(length+1)/2;
+        this->bound = h(start_state, goal_state, wild);
+
+        auto hash_s=zhash.hash(start_state);
+        auto hash_g=zhash.hash(goal_state);
+        stack<tuple<int, int, uint64_t>> st_s, st_g;
+        st_s.emplace(0, 0, hash_s);
+        st_g.emplace(0, 0, hash_g);
+
+        unordered_map<uint64_t, VI> frontier_s, frontier_g;
+        frontier_s[hash_s]=VI();
+        frontier_g[hash_g]=VI();
+
+        while(1){
+            dump(bound)
+            stack<tuple<int, int, uint64_t>> next_st_s, next_st_g;
+            while(!st_s.empty() || !st_g.empty()){
+                if(!st_s.empty()){
+                    int r=next_node(st_s, next_st_s, frontier_s, start_state, goal_state, wild, frontier_g, outside_g, true, j);
+                    if(r>=0)  return tuple{actions, i, r};
+                }
+                if(!st_g.empty()){
+                    int r=next_node(st_g, next_st_g, frontier_g, goal_state, start_state, 0, frontier_s, outside_s, false, i);
+                    if(r>=0)  return tuple{actions, r, j};
+                }
+            }
+            dump(next_st_s.size())
+            dump(frontier_s.size())
+            while(!next_st_s.empty()){
+                st_s.emplace(next_st_s.top());
+                next_st_s.pop();
+            }
+            while(!next_st_g.empty()){
+                st_g.emplace(next_st_g.top());
+                next_st_g.pop();
+            }
+            bound++;
+            if(bound>=max_action_size*2)
+                break;
+        }
+        return nullopt;
+    }
     int next_node(
         stack<tuple<int, int, uint64_t>> &st,
         stack<tuple<int, int, uint64_t>> &next_st,
         // queue<tuple<int, int, uint64_t>> &st,
         // queue<tuple<int, int, uint64_t>> &next_st,
+        // MINPQ<tuple<double, int, int, int, uint64_t>> &st,
+        // MINPQ<tuple<double, int, int, int, uint64_t>> &next_st,
         unordered_map<uint64_t, VI>& frontier,
         // MAXPQ<pair<double, uint64_t>> &score,
         const VI& init_state,
         const VI& target_state, 
         int wild, 
         unordered_map<uint64_t, VI>& frontier_target, 
-        bool from_start
+        unordered_map<uint64_t, int>& outside,
+        bool from_start,
+        int index
     ){
         auto[a, same_action_num, hash]=st.top();st.pop();
         // auto[a, same_action_num, hash]=st.front();st.pop();
+        // auto[_, __, a, same_action_num, hash]=st.top();st.pop();
         if(a+1<allowed_action_num*2)
             st.emplace(a+1, same_action_num, hash);
+            // st.emplace(_, __, a+1, same_action_num, hash);
         assert(frontier.contains(hash));
         // if(!frontier.contains(hash))
         //     return INF;
@@ -789,36 +806,36 @@ struct IDAstar{
         if(!path.empty()){
             // 逆操作
             if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
-                return INF;
+                return -1;
             // グループ順序
             int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
             int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
             if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
-                return INF;
+                return -1;
             // より短い別の動作で置換できる場合
             if(path.back()==a)
                 next_same_action_num = same_action_num+1;
             if(2*next_same_action_num>to_rotate_num[act] 
                 || (2*next_same_action_num==to_rotate_num[act] && act!=a))
-                return INF;
+                return -1;
         }
         path.emplace_back(a);
         auto next = simulation(init_state, path);
         auto next_hash=zhash.hash(next);
         if(frontier.contains(next_hash) && SZ(frontier[next_hash])<=SZ(path)){
             path.pop_back();
-            return INF;
+            return -1;
         }
         frontier[next_hash]=path;
 
         auto h_value=h(next, target_state, wild);
-        if(h_value==0){
+        if(h_value==0 || outside.contains(next_hash)){
             OUT("find0!!!");
             this->actions = path;
             if(!from_start)
                 this->actions=inverse_action(this->actions);
             path.pop_back();
-            return FOUND;
+            return h_value==0 ? index : outside[next_hash];
         }
         if(frontier_target.contains(next_hash)){
             if(from_start){
@@ -833,7 +850,7 @@ struct IDAstar{
                 this->actions.insert(this->actions.end(), action.begin(), action.end());
             }
             path.pop_back();
-            return FOUND;
+            return index;
         }
         // score.emplace(h_value, next_hash);
         // if(score.size()>10000000L){
@@ -843,11 +860,12 @@ struct IDAstar{
         auto f = SZ(path) + h_value;
         if (f <= bound && SZ(path) < this->max_action_size){
             st.emplace(0, next_same_action_num, next_hash);
+            // st.emplace(h_value, SZ(path), 0, next_same_action_num, next_hash);
         }else{
             next_st.emplace(0, next_same_action_num, next_hash);
         }
         path.pop_back();
-        return INF;
+        return -1;
     }
     int search(VI &state, VI &path, int g, int same_action_num){
         ++searched;
@@ -1003,14 +1021,17 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
             states.emplace_back(do_action(states.back(), a));
 
         // 操作
-        int width=1+get_rand(min(SZ(states)-1, 30));
+        // int width=1+get_rand(min(SZ(states)-1, 30));
+        // int width=1+get_rand(11, min(SZ(states)-1, 28));
+        // int width=1+get_rand(11, min(SZ(states)-1, 24));
+        // int width=1+get_rand(11, min(SZ(states)-1, 22));
         // int width=1+get_rand(min(SZ(states)-1, 20));
         // int width=1+get_rand(min(SZ(states)-1, 14));
         // int width=1+get_rand(min(SZ(states)-1, 12));
         // int width=1+get_rand(min(SZ(states)-1, 10));
-        // int width=1+get_rand(min(SZ(states)-1, 8));
+        int width=1+get_rand(min(SZ(states)-1, 8));
+        // int width=1+get_rand(min(SZ(states)-1, 6));
         int i=get_rand(SZ(states)-width);
-        // int j=(i+get_rand(1,SZ(states)))%SZ(states);
         int j=i+width;
         if(i>j)swap(i,j);
         int length=j-i;
@@ -1021,13 +1042,15 @@ double annealing(const string &filename, ChronoTimer &timer, int loop_max, int v
         // auto path=search(states[i], states[j], length, false, states[j]==solution_state ? num_wildcards : 0);
         // auto path=idastar.ida_star(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
         // auto path=idastar.ida_star_bidirect(states[i], states[j], length, states[j]==solution_state ? num_wildcards : 0);
-        auto path=idastar.ida_star_bidirect(states[i], states[j], (length+1)/2, states[j]==solution_state ? num_wildcards : 0);
-        
-        if(!path)continue;
-        const auto &res = path.value();
-        if(SZ(res)>=length)continue;
-        REP(k, SZ(res)){
-            actions[i]=res[k];
+        // auto path=idastar.ida_star_bidirect(states[i], states[j], (length+1)/2, states[j]==solution_state ? num_wildcards : 0);
+        auto res=idastar.ida_star_bidirect(states, i, j);
+        if(!res)continue;
+        VI path;
+        tie(path, i, j)=res.value();
+        length=j-i;
+        if(SZ(path)>=length)continue;
+        REP(k, SZ(path)){
+            actions[i]=path[k];
             ++i;
         }
         actions.erase(actions.begin()+i, actions.begin()+j);
@@ -1290,215 +1313,215 @@ int compression(const string &filename){
     return SZ(result);
 }
 
-struct WreathSolver{
-    int a;// 右 red
-    int b;// 左 blue
-    int c;
-    int Cindex1, Cindex2;
-    int l_stepsize;
-    int r_stepsize;
-    VI matched;
-    VI leftindex;
-    VI rightindex;
-    WreathSolver(){
-        a=label_mapping["A"];// 右 red
-        b=label_mapping["B"];// 左 blue
-        c=label_mapping["C"];
-        Cindex1=-1, Cindex2=-1;
-        // A B A C A B B B A C
-        // C A C A A A B B B B
-        REP(i, state_length)if(solution_state[i]==c){
-            if(Cindex1<0) Cindex1=i;
-            else if(Cindex2<0) Cindex2=i;
-            else assert(false);
-        }
-        l_stepsize=0;
-        r_stepsize=0;
-        auto state=solution_state;
-        REP(act, allowed_action_num)
-            REP(i, to_rotate_num[act]){
-                state=do_action(state, 0);
-                if(state[Cindex1]==c||state[Cindex2]==c){
-                    if(act==0) l_stepsize=i+1;
-                    else r_stepsize=i+1;
-                    break;
-                }
-            }
-        dump(l_stepsize)
-        dump(r_stepsize)
+// struct WreathSolver{
+//     int a;// 右 red
+//     int b;// 左 blue
+//     int c;
+//     int Cindex1, Cindex2;
+//     int l_stepsize;
+//     int r_stepsize;
+//     VI matched;
+//     VI leftindex;
+//     VI rightindex;
+//     WreathSolver(){
+//         a=label_mapping["A"];// 右 red
+//         b=label_mapping["B"];// 左 blue
+//         c=label_mapping["C"];
+//         Cindex1=-1, Cindex2=-1;
+//         // A B A C A B B B A C
+//         // C A C A A A B B B B
+//         REP(i, state_length)if(solution_state[i]==c){
+//             if(Cindex1<0) Cindex1=i;
+//             else if(Cindex2<0) Cindex2=i;
+//             else assert(false);
+//         }
+//         l_stepsize=0;
+//         r_stepsize=0;
+//         auto state=solution_state;
+//         REP(act, allowed_action_num)
+//             REP(i, to_rotate_num[act]){
+//                 state=do_action(state, 0);
+//                 if(state[Cindex1]==c||state[Cindex2]==c){
+//                     if(act==0) l_stepsize=i+1;
+//                     else r_stepsize=i+1;
+//                     break;
+//                 }
+//             }
+//         dump(l_stepsize)
+//         dump(r_stepsize)
 
-        REP(act, allowed_action_num){
-            VI index(state_length);
-            ARANGE(index);
-            if(act==0)leftindex.emplace_back(index[Cindex1]);
-            else rightindex.emplace_back(index[Cindex1]);
-            REP(i, to_rotate_num[act]-1){
-                index=do_action(index, act);
-                if(act==0)leftindex.emplace_back(index[Cindex1]);
-                else rightindex.emplace_back(index[Cindex1]);
-            }
-        }
-        dump(leftindex)
-        dump(rightindex)
-        matching(initial_state);
-    }
-    void matching(const VI& state){
-        matched.assign(state_length, -1);
-        REP(act, allowed_action_num){
-            auto &index= (act==0) ? leftindex : rightindex;
-            int stepsize = (act==0) ? l_stepsize : r_stepsize;
-            int color = (act==0) ? b : a;
-            REP(i, SZ(index)){
-                int I=index[i];
-                if(matched[I]<0){
-                    int J=index[(i+stepsize)%SZ(index)];
-                    if(matched[J]<0 && state[I]==color && state[J]==color){
-                        matched[J]=I, matched[I]=J;
-                        continue;
-                    }
-                    J=index[(i-stepsize+SZ(index))%SZ(index)];
-                    if(matched[J]<0 && state[I]==color && state[J]==color){
-                        matched[J]=I, matched[I]=J;
-                        continue;
-                    }
-                }
-            }
-        }
-        dump(matched);
-    }
+//         REP(act, allowed_action_num){
+//             VI index(state_length);
+//             ARANGE(index);
+//             if(act==0)leftindex.emplace_back(index[Cindex1]);
+//             else rightindex.emplace_back(index[Cindex1]);
+//             REP(i, to_rotate_num[act]-1){
+//                 index=do_action(index, act);
+//                 if(act==0)leftindex.emplace_back(index[Cindex1]);
+//                 else rightindex.emplace_back(index[Cindex1]);
+//             }
+//         }
+//         dump(leftindex)
+//         dump(rightindex)
+//         matching(initial_state);
+//     }
+//     void matching(const VI& state){
+//         matched.assign(state_length, -1);
+//         REP(act, allowed_action_num){
+//             auto &index= (act==0) ? leftindex : rightindex;
+//             int stepsize = (act==0) ? l_stepsize : r_stepsize;
+//             int color = (act==0) ? b : a;
+//             REP(i, SZ(index)){
+//                 int I=index[i];
+//                 if(matched[I]<0){
+//                     int J=index[(i+stepsize)%SZ(index)];
+//                     if(matched[J]<0 && state[I]==color && state[J]==color){
+//                         matched[J]=I, matched[I]=J;
+//                         continue;
+//                     }
+//                     J=index[(i-stepsize+SZ(index))%SZ(index)];
+//                     if(matched[J]<0 && state[I]==color && state[J]==color){
+//                         matched[J]=I, matched[I]=J;
+//                         continue;
+//                     }
+//                 }
+//             }
+//         }
+//         dump(matched);
+//     }
 
-    tuple<int, bool, bool> get_loop_num(const VI& istate, int act){
-        int color = act==0 ? b : a;
-        auto state=istate;
-        int num=to_rotate_num[act]-1;
-        if(get_mistakes(state)<=num_wildcards)
-            return {0, true, false};
-        else if(state[Cindex1]==color && color==state[Cindex2])
-            return {0, false, false};
-        REP(loop, num){
-            state=do_action(state, act);
-            bool inv=2*(loop+1) > to_rotate_num[act];
-            if(get_mistakes(state)<=num_wildcards)
-                return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), true, inv};
-            else if(state[Cindex1]==color && color==state[Cindex2])
-                return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), false, inv};
-        }
-        return {-1, false, false};
-    }
-    optional<VI> solve(int current_best_size){
-        // lを繰り返して、2つのaを見つける → rを回転する
-        // rを繰り返して、2つのbを見つける → lを回転する
-        VI actions;
-        auto state=initial_state;
-        while(1){
-            auto [left_num, lfin, linv]=get_loop_num(state, 0);
-            auto [right_num, rfin, rinv]=get_loop_num(state, 1);
+//     tuple<int, bool, bool> get_loop_num(const VI& istate, int act){
+//         int color = act==0 ? b : a;
+//         auto state=istate;
+//         int num=to_rotate_num[act]-1;
+//         if(get_mistakes(state)<=num_wildcards)
+//             return {0, true, false};
+//         else if(state[Cindex1]==color && color==state[Cindex2])
+//             return {0, false, false};
+//         REP(loop, num){
+//             state=do_action(state, act);
+//             bool inv=2*(loop+1) > to_rotate_num[act];
+//             if(get_mistakes(state)<=num_wildcards)
+//                 return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), true, inv};
+//             else if(state[Cindex1]==color && color==state[Cindex2])
+//                 return {inv ? (to_rotate_num[act]-loop-1) : (loop+1), false, inv};
+//         }
+//         return {-1, false, false};
+//     }
+//     optional<VI> solve(int current_best_size){
+//         // lを繰り返して、2つのaを見つける → rを回転する
+//         // rを繰り返して、2つのbを見つける → lを回転する
+//         VI actions;
+//         auto state=initial_state;
+//         while(1){
+//             auto [left_num, lfin, linv]=get_loop_num(state, 0);
+//             auto [right_num, rfin, rinv]=get_loop_num(state, 1);
             
-            if(lfin && rfin){
-                if(left_num<right_num)
-                    REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
-                else
-                    REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
-                break;
-            }else if(lfin){
-                REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
-                break;
-            }else if(rfin){
-                REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
-                break;
-            }else if(left_num>0 && right_num>0){
-                if(left_num<right_num)
-                    REP(_, left_num){
-                        int act=linv ? 2 : 0;
-                        actions.emplace_back(act);
-                        state=do_action(state, act);
-                    }
-                else
-                    REP(_, right_num){
-                        int act=rinv ? 3 : 1;
-                        actions.emplace_back(act);
-                        state=do_action(state, act);
-                    }
-            }else if(left_num>0){
-                REP(_, left_num){
-                    int act=linv ? 2 : 0;
-                    actions.emplace_back(act);
-                    state=do_action(state, act);
-                }
-            }else if(right_num>0){
-                REP(_, right_num){
-                    int act=rinv ? 3 : 1;
-                    actions.emplace_back(act);
-                    state=do_action(state, act);
-                }
-            }else{
-                dump(action_decode(actions))
-                dump(state)
+//             if(lfin && rfin){
+//                 if(left_num<right_num)
+//                     REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
+//                 else
+//                     REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
+//                 break;
+//             }else if(lfin){
+//                 REP(_, left_num)actions.emplace_back(linv ? 2 : 0);
+//                 break;
+//             }else if(rfin){
+//                 REP(_, right_num)actions.emplace_back(rinv ? 3 : 1);
+//                 break;
+//             }else if(left_num>0 && right_num>0){
+//                 if(left_num<right_num)
+//                     REP(_, left_num){
+//                         int act=linv ? 2 : 0;
+//                         actions.emplace_back(act);
+//                         state=do_action(state, act);
+//                     }
+//                 else
+//                     REP(_, right_num){
+//                         int act=rinv ? 3 : 1;
+//                         actions.emplace_back(act);
+//                         state=do_action(state, act);
+//                     }
+//             }else if(left_num>0){
+//                 REP(_, left_num){
+//                     int act=linv ? 2 : 0;
+//                     actions.emplace_back(act);
+//                     state=do_action(state, act);
+//                 }
+//             }else if(right_num>0){
+//                 REP(_, right_num){
+//                     int act=rinv ? 3 : 1;
+//                     actions.emplace_back(act);
+//                     state=do_action(state, act);
+//                 }
+//             }else{
+//                 dump(action_decode(actions))
+//                 dump(state)
 
-                // IDAstar idastar;
-                // bool dual=false;
-                // auto res = dual ?
-                //     idastar.ida_star_bidirect(state, solution_state, current_best_size, num_wildcards)
-                //     : idastar.ida_star(state, solution_state, current_best_size, num_wildcards);
-                auto res=search(state, solution_state, current_best_size, false, num_wildcards);
-                if(res){
-                    auto& add = res.value();
-                    actions.insert(actions.end(), add.begin(), add.end());
-                    return actions;
-                }
-                return nullopt;
-            }
-            // dump(state)
-        }
-        return actions;
-    }
-};
+//                 // IDAstar idastar;
+//                 // bool dual=false;
+//                 // auto res = dual ?
+//                 //     idastar.ida_star_bidirect(state, solution_state, current_best_size, num_wildcards)
+//                 //     : idastar.ida_star(state, solution_state, current_best_size, num_wildcards);
+//                 auto res=search(state, solution_state, current_best_size, false, num_wildcards);
+//                 if(res){
+//                     auto& add = res.value();
+//                     actions.insert(actions.end(), add.begin(), add.end());
+//                     return actions;
+//                 }
+//                 return nullopt;
+//             }
+//             // dump(state)
+//         }
+//         return actions;
+//     }
+// };
 
-int run_WreathSolver(const string &filename){
-    assert(file_exists(filename));
-    auto current_best=load_actions(filename);
-    dump(SZ(current_best))
+// int run_WreathSolver(const string &filename){
+//     assert(file_exists(filename));
+//     auto current_best=load_actions(filename);
+//     dump(SZ(current_best))
     
-    WreathSolver solver;
-    auto res=solver.solve(SZ(current_best));
-    if(res){
-        if(SZ(res.value())<SZ(current_best)){
-            OUT("saved", SZ(current_best), "->", SZ(res.value()));
-            save_actions(filename, res.value());
-        }
-        return SZ(res.value());
-    }
-    return INF;
-}
+//     WreathSolver solver;
+//     auto res=solver.solve(SZ(current_best));
+//     if(res){
+//         if(SZ(res.value())<SZ(current_best)){
+//             OUT("saved", SZ(current_best), "->", SZ(res.value()));
+//             save_actions(filename, res.value());
+//         }
+//         return SZ(res.value());
+//     }
+//     return INF;
+// }
 
 const string DATA_DIR = "./data/";
 const set<string> TARGET{
-       "cube_2/2/2",
-       "cube_3/3/3",
-       "cube_4/4/4",
-       "cube_5/5/5",
-       "cube_6/6/6",
-       "cube_7/7/7",
-       "cube_8/8/8",
-       "cube_9/9/9",
-       "cube_10/10/10",
-       "cube_19/19/19",
-       "cube_33/33/33",
-       "wreath_6/6",
-       "wreath_7/7",
-       "wreath_12/12",
-       "wreath_21/21",
-       "wreath_33/33",
-       "wreath_100/100",
+    //    "cube_2/2/2",
+    //    "cube_3/3/3",
+    //    "cube_4/4/4",
+    //    "cube_5/5/5",
+    //    "cube_6/6/6",
+    //    "cube_7/7/7",
+    //    "cube_8/8/8",
+    //    "cube_9/9/9",
+    //    "cube_10/10/10",
+    //    "cube_19/19/19",
+    //    "cube_33/33/33",
+    //    "wreath_6/6",
+    //    "wreath_7/7",
+    //    "wreath_12/12",
+    //    "wreath_21/21",
+    //    "wreath_33/33",
+    //    "wreath_100/100",
        "globe_1/8",
        "globe_1/16",
-       "globe_2/6",
-       "globe_3/4",
-       "globe_6/4",
+    //    "globe_2/6",
+    //    "globe_3/4",
+    //    "globe_6/4",
        "globe_6/8",
-       "globe_6/10",
-       "globe_3/33",
-       "globe_8/25"
+    //    "globe_6/10",
+    //    "globe_3/33",
+    //    "globe_8/25"
 };
 int main() {
     ChronoTimer timer;
@@ -1506,8 +1529,8 @@ int main() {
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    REP(i, case_num){
-    // RREP(i, case_num){
+    // REP(i, case_num){
+    RREP(i, case_num){
     // FOR(i,  30, case_num){
     // FOR(i,  150, case_num){
     // FOR(i, 284, case_num){
@@ -1529,19 +1552,21 @@ int main() {
         OUT("id", i);
         dump(puzzle_type)
         dump(num_wildcards)
+        dump(allowed_action_num)
 
         string output_filename="output/"+to_string(i)+".txt";
         // double score=ida_solve(output_filename, false);
         // double score=ida_solve(output_filename, true);
 
-        // double score = annealing(output_filename, timer, 1000, 100);
+        double score = annealing(output_filename, timer, 5000, 100);
+        // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
         // double score = search(output_filename, false, 0.95);
         // double score = search(output_filename, true, 0.95);
         // double score = search(output_filename, false, 0.01);
         // make_dataset(i);
-        double score=0;
+        // double score=0;
         // double score=run_WreathSolver(output_filename);
         // exit(0);
         // double score=compression(output_filename);
