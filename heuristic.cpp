@@ -1405,7 +1405,8 @@ VI dual_greedy_improve(const VI &action, int depth){
         int imp=SZ(action) - to_end[i].first;
         if(imp>0){
             auto act=construct_actions(0, to_end[i].second, hash_to_depth[i]);
-            improve_idx_act={imp, SZ(action), act};
+            dump(imp)
+            result.insert(result.end(), act.begin(), act.end());
             break;
         }
         #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
