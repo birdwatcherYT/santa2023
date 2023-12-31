@@ -1341,13 +1341,15 @@ VI greedy_improve(const VI &action, int depth){
 void dfs(
     const VI &state, VI &path, int same_action_num, size_t maxdepth, 
     ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, tuple<int,uint64_t,int>>& visit, 
-    uint64_t prev_hash
+    uint64_t prev_hash, pair<int, uint64_t> &to_end
 ){
     if (path.size() > maxdepth) return ;
     auto hash=zhash.hash(state);
     if (visit.contains(hash) && get<0>(visit[hash])<=SZ(path))
         return;
     visit[hash]={SZ(path), prev_hash, path.empty()? -1: path.back()};
+    if(num_wildcards!=0 && SZ(path)<to_end.first && get_mistakes(state)<=num_wildcards)
+        to_end={SZ(path), hash};
     REP(a, allowed_action_num*2){
         int next_same_action_num=1;
         if(!path.empty()){
@@ -1367,7 +1369,7 @@ void dfs(
                 continue;
         }
         path.emplace_back(a);
-        dfs(do_action(state, a), path, next_same_action_num, maxdepth, zhash, visit, hash);
+        dfs(do_action(state, a), path, next_same_action_num, maxdepth, zhash, visit, hash, to_end);
         path.pop_back();
     }
 }
@@ -1384,10 +1386,11 @@ VI dual_greedy_improve(const VI &action, int depth){
     }
 
     vector<unordered_map<uint64_t, tuple<int,uint64_t,int>>> hash_to_depth(SZ(states));
+    vector<pair<int, uint64_t>> to_end(SZ(states), {INF, 0});
     #pragma omp parallel for
     REP(i, SZ(states)){
         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit; VI path;
-        dfs(states[i], path, 0, depth, zhash, visit, 0);
+        dfs(states[i], path, 0, depth, zhash, visit, 0, to_end[i]);
         hash_to_depth[i]=visit;
         dump(i)
         dump(hash_to_depth[i].size())
@@ -1398,7 +1401,13 @@ VI dual_greedy_improve(const VI &action, int depth){
         dump(i)
         // 近傍をチェックして同じ状態があればジャンプする
         tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
-        // TODO: ワイルドカードのゴールへ早く付く場合を考慮
+        // ワイルドカードのゴールへ早く付く場合
+        int imp=SZ(action) - to_end[i].first;
+        if(imp>0){
+            auto act=construct_actions(0, to_end[i].second, hash_to_depth[i]);
+            improve_idx_act={imp, SZ(action), act};
+            break;
+        }
         #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
         for(int j=i+1; j<=SZ(action); ++j){
             for(auto [hash1, value1]: hash_to_depth[i]){
@@ -1424,53 +1433,53 @@ VI dual_greedy_improve(const VI &action, int depth){
     return result;
 }
 
-VI dual_greedy_improve_low_memory(const VI &action, int depth){
-    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+// VI dual_greedy_improve_low_memory(const VI &action, int depth){
+//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
-    VVI states{initial_state};
-    auto state=initial_state;
-    for(int a: action){
-        state = do_action(state, a);
-        states.emplace_back(state);
-    }
+//     VVI states{initial_state};
+//     auto state=initial_state;
+//     for(int a: action){
+//         state = do_action(state, a);
+//         states.emplace_back(state);
+//     }
 
-    VI result;
-    for(int i=0; i<SZ(action); ){
-        dump(i)
-        tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
-        VI path;
-        unordered_map<uint64_t, tuple<int,uint64_t,int>> visit1;
-        dfs(states[i], path, 0, depth, zhash, visit1, 0);
-        dump(visit1.size())
+//     VI result;
+//     for(int i=0; i<SZ(action); ){
+//         dump(i)
+//         tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
+//         VI path;
+//         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit1;
+//         dfs(states[i], path, 0, depth, zhash, visit1, 0);
+//         dump(visit1.size())
 
-        #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
-        for(int j=i+1; j<=SZ(action); ++j){
-            path.clear();
-            unordered_map<uint64_t, tuple<int,uint64_t,int>> visit2;
-            dfs(states[i], path, 0, depth, zhash, visit2, 0);
+//         #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
+//         for(int j=i+1; j<=SZ(action); ++j){
+//             path.clear();
+//             unordered_map<uint64_t, tuple<int,uint64_t,int>> visit2;
+//             dfs(states[i], path, 0, depth, zhash, visit2, 0);
 
-            for(auto [hash1, value1]: visit1){
-                auto it2=visit2.find(hash1);
-                if(it2==visit2.end()) continue;
-                int d1 = get<0>(value1);
-                int d2 = get<0>(it2->second);
-                int imp = (j-i) - (d1+d2);
-                if(get<0>(improve_idx_act)<imp){
-                    auto act=construct_actions(0, hash1, visit1);
-                    auto act2=inverse_action(construct_actions(0, it2->first, visit2));
-                    act.insert(act.end(), act2.begin(), act2.end());
-                    improve_idx_act={imp, j, act};
-                }
-            }
-        }
-        auto &[improve, idx, act]=improve_idx_act;
-        if(improve>0)
-            dump(improve)
-        i=idx;
-        result.insert(result.end(), act.begin(), act.end());
-    }
-    return result;
-}
+//             for(auto [hash1, value1]: visit1){
+//                 auto it2=visit2.find(hash1);
+//                 if(it2==visit2.end()) continue;
+//                 int d1 = get<0>(value1);
+//                 int d2 = get<0>(it2->second);
+//                 int imp = (j-i) - (d1+d2);
+//                 if(get<0>(improve_idx_act)<imp){
+//                     auto act=construct_actions(0, hash1, visit1);
+//                     auto act2=inverse_action(construct_actions(0, it2->first, visit2));
+//                     act.insert(act.end(), act2.begin(), act2.end());
+//                     improve_idx_act={imp, j, act};
+//                 }
+//             }
+//         }
+//         auto &[improve, idx, act]=improve_idx_act;
+//         if(improve>0)
+//             dump(improve)
+//         i=idx;
+//         result.insert(result.end(), act.begin(), act.end());
+//     }
+//     return result;
+// }
 
 // optional<VI> find_merge_point(const VI &fullpath, int fulltail, const VI &subpath, int subtail, int depth){
 //     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
@@ -1865,23 +1874,23 @@ map<string, int> TARGET{
        {"cube_8/8/8", 3},
        {"cube_9/9/9", 3},
        {"cube_10/10/10", 3},
-       {"cube_19/19/19", 3},
-       {"cube_33/33/33", 3},
+       {"cube_19/19/19", 2}, // 
+       {"cube_33/33/33", 1}, //
        {"wreath_6/6", 12},
        {"wreath_7/7", 12},
        {"wreath_12/12", 12},
        {"wreath_21/21", 12},
        {"wreath_33/33", 12},
-       {"wreath_100/100", 9},
+       {"wreath_100/100", 9}, // 
        {"globe_1/8", 4},
        {"globe_1/16", 3},
        {"globe_2/6", 4},
        {"globe_3/4", 4},
-       {"globe_6/4", 3},
+       {"globe_6/4", 4}, // 3->4
        {"globe_6/8", 3},
        {"globe_6/10", 3},
-       {"globe_3/33", 3},
-       {"globe_8/25", 3}
+       {"globe_3/33", 2},
+       {"globe_8/25", 2}
 };
 
 int main() {
@@ -1896,7 +1905,7 @@ int main() {
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{283000}){
     REP(i, case_num){
-    // FOR(i, 204, case_num){
+    // FOR(i, 387, case_num){
     // RREP(i, case_num){
     // FOR(i,  30, case_num){
     // FOR(i,  150, case_num){
@@ -1919,6 +1928,7 @@ int main() {
         if(!TARGET.contains(puzzle_type))
             continue;
         OUT("id", i);
+        // if(num_wildcards==0)continue;
 
         string output_filename="output/"+to_string(i)+".txt";
         // double score=ida_solve(output_filename, false);
