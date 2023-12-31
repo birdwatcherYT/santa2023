@@ -1472,6 +1472,86 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth){
     return result;
 }
 
+// optional<VI> find_merge_point(const VI &fullpath, int fulltail, const VI &subpath, int subtail, int depth){
+//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+
+//     VVI full_states{initial_state};
+//     auto state=initial_state;
+//     for(int a: fullpath){
+//         state = do_action(state, a);
+//         full_states.emplace_back(state);
+//     }
+
+//     VVI sub_states{initial_state};
+//     state=initial_state;
+//     for(int a: subpath){
+//         state = do_action(state, a);
+//         sub_states.emplace_back(state);
+//     }
+
+//     // hash_to_depth_full[0]が末尾状態
+//     vector<unordered_map<uint64_t, tuple<int,uint64_t,int>>> hash_to_depth_full(fulltail);
+//     #pragma omp parallel for
+//     REP(i, fulltail){
+//         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit; VI path;
+//         dfs(*(full_states.rbegin()+i), path, 0, depth, zhash, visit, 0);
+//         hash_to_depth_full[i]=visit;
+//         dump(i)
+//         dump(hash_to_depth_full[i].size())
+//     }
+
+//     // hash_to_depth_sub[0]が末尾状態
+//     vector<unordered_map<uint64_t, tuple<int,uint64_t,int>>> hash_to_depth_sub(subtail);
+//     #pragma omp parallel for
+//     REP(i, subtail){
+//         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit; VI path;
+//         dfs(*(sub_states.rbegin()+i), path, 0, depth, zhash, visit, 0);
+//         hash_to_depth_sub[i]=visit;
+//         dump(i)
+//         dump(hash_to_depth_sub[i].size())
+//     }
+
+//     VI result=subpath;
+//     for(int i=0; i<subtail; ++i){
+//         for(int j=0; j<fulltail; ++j){
+//             for(auto [hash1, value1]: hash_to_depth_sub[i]){
+//                 auto it2=hash_to_depth_full[j].find(hash1);
+//                 if(it2==hash_to_depth_full[j].end()) continue;
+
+//                 auto act=construct_actions(0, hash1, hash_to_depth_sub[i]);
+//                 result.insert(result.end(), act.begin(), act.end());
+//                 auto act2=inverse_action(construct_actions(0, it2->first, hash_to_depth_sub[j]));
+//                 result.insert(result.end(), act2.begin(), act2.end());
+//                 result.insert(result.end(), fullpath.begin()+SZ(fullpath)-1 -j, fullpath.end());
+//                 return result;
+//             }
+//         }
+//         result.pop_back();
+//     }
+//     return nullopt;
+// }
+
+// int solve_using_subproblem(const string &fullanswer_path, const string &subanswer_path, int fulltail, int subtail, int depth){
+//     auto fullpath=load_actions(fullanswer_path);
+//     dump(SZ(fullpath))
+//     auto subpath=load_actions(subanswer_path);
+//     dump(SZ(subpath))
+//     auto result=find_merge_point(fullpath, fulltail, subpath, subtail, depth);
+//     if(result){
+//         OUT("success merge!!");
+//         auto &ans = result.value();
+//         int mistake = get_mistakes(simulation(initial_state, ans));
+//         assert(mistake<=num_wildcards);
+//         if(SZ(ans)<SZ(fullpath)){
+//             OUT("saved", SZ(fullpath), "->", SZ(ans));
+//             save_actions(fullanswer_path, ans);
+//         }
+//         return SZ(ans);
+//     }else
+//         OUT("fail merge!!");
+//     return INF;
+// }
+
 // VI greedy_improve2(const VI &action, int depth){
 //     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 //     unordered_map<uint64_t, int> hash_to_idx;
@@ -1787,14 +1867,14 @@ map<string, int> TARGET{
        {"cube_10/10/10", 3},
        {"cube_19/19/19", 3},
        {"cube_33/33/33", 3},
-       {"wreath_6/6", 10},
-       {"wreath_7/7", 10},
-       {"wreath_12/12", 10},
-       {"wreath_21/21", 10},
-       {"wreath_33/33", 10},
+       {"wreath_6/6", 12},
+       {"wreath_7/7", 12},
+       {"wreath_12/12", 12},
+       {"wreath_21/21", 12},
+       {"wreath_33/33", 12},
        {"wreath_100/100", 9},
        {"globe_1/8", 4},
-       {"globe_1/16", 4},
+       {"globe_1/16", 3},
        {"globe_2/6", 4},
        {"globe_3/4", 4},
        {"globe_6/4", 3},
@@ -1811,7 +1891,8 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     // for(int i: VI{200000, 201000, 202000, 204000, 205000, 206000, 207000, 208000, 209000, 240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
-    // for(int i: VI{202000, 204000, 205000, 206000, 207000, 208000, 209000, 240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
+    // for(int i: VI{200, 201, 202, 204, 205, 206, 207, 208, 209, 240, 241, 242, 243, 244, 255, 256, 283}){
+    // for(int i: VI{255000, 256000, 283000}){
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{283000}){
     REP(i, case_num){
@@ -1849,7 +1930,9 @@ int main() {
         // double score = search(output_filename, true, 1);
         // double score=0;
         // double score=run_WreathSolver(output_filename);
-        // exit(0);
+
+        // double score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
+
         double score=compression(output_filename, TARGET[puzzle_type]);
         check_answer(output_filename);
         timer.end();
