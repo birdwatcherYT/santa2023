@@ -1377,7 +1377,7 @@ void dfs(
 }
 
 #pragma omp declare reduction(maximum_tuple : tuple<int,int,VI> : omp_out=(omp_out>omp_in ? omp_out : omp_in)) initializer(omp_priv = omp_orig)
-VI dual_greedy_improve(const VI &action, int depth){
+VI dual_greedy_improve(const VI &action, int depth, int search_step=INF){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
     VVI states{initial_state};
@@ -1411,8 +1411,9 @@ VI dual_greedy_improve(const VI &action, int depth){
             result.insert(result.end(), act.begin(), act.end());
             break;
         }
+        int end=min(SZ(action), i+search_step);
         #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
-        for(int j=i+1; j<=SZ(action); ++j){
+        for(int j=i+1; j<=end; ++j){
             for(auto [hash1, value1]: hash_to_depth[i]){
                 auto it2=hash_to_depth[j].find(hash1);
                 if(it2==hash_to_depth[j].end()) continue;
@@ -1664,12 +1665,12 @@ VI dual_greedy_improve(const VI &action, int depth){
 // }
 
 // 解の圧縮
-int compression(const string &filename, int depth){
+int compression(const string &filename, int depth, int search_step=INF){
     auto actions=load_actions(filename);
     dump(SZ(actions))
 
     auto result = actions;
-    result = dual_greedy_improve(result, min(depth, SZ(actions)));
+    result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)));
     // result = greedy_improve(result, depth);
     // result = wildcard_finish(result);
@@ -1909,19 +1910,19 @@ map<string, int> TARGET{
        {"cube_8/8/8", 3},
        {"cube_9/9/9", 3},
        {"cube_10/10/10", 3},
-       {"cube_19/19/19", 2}, // 
-       {"cube_33/33/33", 1}, //
+       {"cube_19/19/19", 2},
+       {"cube_33/33/33", 1},
        {"wreath_6/6", 12},
        {"wreath_7/7", 12},
        {"wreath_12/12", 12},
        {"wreath_21/21", 12},
        {"wreath_33/33", 12},
-       {"wreath_100/100", 9}, // 
+       {"wreath_100/100", 9},
        {"globe_1/8", 4},
        {"globe_1/16", 3},
        {"globe_2/6", 4},
        {"globe_3/4", 4},
-       {"globe_6/4", 4}, // 3->4
+       {"globe_6/4", 4},
        {"globe_6/8", 3},
        {"globe_6/10", 3},
        {"globe_3/33", 2},
@@ -1978,7 +1979,8 @@ int main() {
 
         // double score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
 
-        double score=compression(output_filename, TARGET[puzzle_type]);
+        // double score=compression(output_filename, TARGET[puzzle_type]);
+        double score=compression(output_filename, TARGET[puzzle_type], 1000);
         // double score=kstep_replace(output_filename, TARGET[puzzle_type]);
 
         check_answer(output_filename);
