@@ -534,15 +534,27 @@ int get_mistakes(const VI& state,const VI& goal_state){
 //     return cnt;
 // }
 
-string action_decode(const VI& actions){
+string action_decode(const VI& actions, const string & delim="."){
     string ans="";
     REP(i, SZ(actions)){
         int a=actions[i];
         ans += get_action_name(a);
         if(i+1!=SZ(actions))
-            ans += ".";
+            ans += delim;
     }
     return ans;
+}
+VI action_encode(const string& str, char delim='.'){
+    map<string, int> action_mapping;
+    REP(i, allowed_action_num){
+        action_mapping[allowed_moves_name[i]]=i;
+        action_mapping["-"+allowed_moves_name[i]]=i+allowed_action_num;
+    }
+
+    VI actions;
+    for(auto& a: split_str(str, delim, true))
+        actions.emplace_back(action_mapping[a]);
+    return actions;
 }
 // 逆操作にする
 VI inverse_action(const VI& path){
@@ -558,17 +570,7 @@ VI load_actions(const string &filename){
     ifstream ifs(filename);
     string str;
     ifs>>str;
-
-    map<string, int> action_mapping;
-    REP(i, allowed_action_num){
-        action_mapping[allowed_moves_name[i]]=i;
-        action_mapping["-"+allowed_moves_name[i]]=i+allowed_action_num;
-    }
-
-    VI actions;
-    for(auto& a: split_str(str, '.', true))
-        actions.emplace_back(action_mapping[a]);
-    return actions;
+    return action_encode(str);
 }
 void save_actions(const string &filename, const VI& actions){
     ofstream ofs(filename);
@@ -1402,7 +1404,7 @@ VI dual_greedy_improve(const VI &action, int depth){
         // 近傍をチェックして同じ状態があればジャンプする
         tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
         // ワイルドカードのゴールへ早く付く場合
-        int imp=SZ(action) - to_end[i].first;
+        int imp=SZ(action) - to_end[i].first - i;
         if(imp>0){
             auto act=construct_actions(0, to_end[i].second, hash_to_depth[i]);
             dump(imp)
@@ -1864,6 +1866,38 @@ int compression(const string &filename, int depth){
 //     return INF;
 // }
 
+void generate(const string& name, const VI &index, int depth, int maxdepth, 
+             ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, string>>> &bestaction){
+    if(depth>maxdepth)return;
+    bestaction[zhash.hash(index)].emplace(depth, name);
+    REP(a, allowed_action_num*2)
+        generate(name+"/"+get_action_name(a), do_action(index, a), depth+1, maxdepth, zhash, bestaction);
+}
+
+int kstep_replace(const string &filename, int k){
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    VI index(state_length);
+    ARANGE(index);
+    unordered_map<uint64_t, set<pair<int, string>>> bestaction;
+    generate("", index, 0, k, zhash, bestaction);
+    dump(bestaction.size())
+
+    auto action=load_actions(filename);
+    auto act_str = action_decode(action, "/");
+    for(auto &[h, s]: bestaction){
+        const auto &best_str=s.begin()->second;
+        for(auto it=s.rbegin(); it!=s.rend(); it++)
+            act_str=regex_replace(act_str, regex(it->second), best_str);
+    }
+    auto result = action_encode(act_str, '/');
+    if(SZ(result)<SZ(action)){
+        OUT("saved", SZ(action), "->", SZ(result));
+        save_actions(filename, result);
+    }
+    return SZ(result);
+}
+
+
 const string DATA_DIR = "./data/";
 map<string, int> TARGET{
        {"cube_2/2/2", 5},
@@ -1945,6 +1979,8 @@ int main() {
         // double score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
 
         double score=compression(output_filename, TARGET[puzzle_type]);
+        // double score=kstep_replace(output_filename, TARGET[puzzle_type]);
+
         check_answer(output_filename);
         timer.end();
         if(DEBUG) {
