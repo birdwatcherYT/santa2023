@@ -1437,53 +1437,63 @@ VI dual_greedy_improve(const VI &action, int depth, int search_step=INF){
     return result;
 }
 
-// VI dual_greedy_improve_low_memory(const VI &action, int depth){
-//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step){
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
-//     VVI states{initial_state};
-//     auto state=initial_state;
-//     for(int a: action){
-//         state = do_action(state, a);
-//         states.emplace_back(state);
-//     }
+    VVI states{initial_state};
+    auto state=initial_state;
+    for(int a: action){
+        state = do_action(state, a);
+        states.emplace_back(state);
+    }
 
-//     VI result;
-//     for(int i=0; i<SZ(action); ){
-//         dump(i)
-//         tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
-//         VI path;
-//         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit1;
-//         dfs(states[i], path, 0, depth, zhash, visit1, 0);
-//         dump(visit1.size())
+    VI result;
+    for(int i=0; i<SZ(action); ){
+        dump(i)
+        tuple<int,int,VI> improve_idx_act={0,i+1,VI{action[i]}};
+        VI path;
+        unordered_map<uint64_t, tuple<int,uint64_t,int>> visit1;
+        pair<int, uint64_t> to_end{INF,0};
+        dfs(states[i], path, 0, depth, zhash, visit1, 0, to_end);
+        dump(visit1.size())
+        int imp=SZ(action) - to_end.first - i;
+        if(imp>0){
+            auto act=construct_actions(0, to_end.second, visit1);
+            dump(imp)
+            result.insert(result.end(), act.begin(), act.end());
+            break;
+        }
 
-//         #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
-//         for(int j=i+1; j<=SZ(action); ++j){
-//             path.clear();
-//             unordered_map<uint64_t, tuple<int,uint64_t,int>> visit2;
-//             dfs(states[i], path, 0, depth, zhash, visit2, 0);
+        int end=min(search_step, SZ(action));
+        #pragma omp parallel for reduction(maximum_tuple: improve_idx_act)
+        for(int j=i+1; j<=end; ++j){
+            VI path;
+            unordered_map<uint64_t, tuple<int,uint64_t,int>> visit2;
+            pair<int, uint64_t> to_end{INF,0};
+            dfs(states[j], path, 0, depth, zhash, visit2, 0, to_end);
 
-//             for(auto [hash1, value1]: visit1){
-//                 auto it2=visit2.find(hash1);
-//                 if(it2==visit2.end()) continue;
-//                 int d1 = get<0>(value1);
-//                 int d2 = get<0>(it2->second);
-//                 int imp = (j-i) - (d1+d2);
-//                 if(get<0>(improve_idx_act)<imp){
-//                     auto act=construct_actions(0, hash1, visit1);
-//                     auto act2=inverse_action(construct_actions(0, it2->first, visit2));
-//                     act.insert(act.end(), act2.begin(), act2.end());
-//                     improve_idx_act={imp, j, act};
-//                 }
-//             }
-//         }
-//         auto &[improve, idx, act]=improve_idx_act;
-//         if(improve>0)
-//             dump(improve)
-//         i=idx;
-//         result.insert(result.end(), act.begin(), act.end());
-//     }
-//     return result;
-// }
+            for(auto [hash1, value1]: visit1){
+                auto it2=visit2.find(hash1);
+                if(it2==visit2.end()) continue;
+                int d1 = get<0>(value1);
+                int d2 = get<0>(it2->second);
+                int imp = (j-i) - (d1+d2);
+                if(get<0>(improve_idx_act)<imp){
+                    auto act=construct_actions(0, hash1, visit1);
+                    auto act2=inverse_action(construct_actions(0, it2->first, visit2));
+                    act.insert(act.end(), act2.begin(), act2.end());
+                    improve_idx_act={imp, j, act};
+                }
+            }
+        }
+        auto &[improve, idx, act]=improve_idx_act;
+        if(improve>0)
+            dump(improve)
+        i=idx;
+        result.insert(result.end(), act.begin(), act.end());
+    }
+    return result;
+}
 
 // optional<VI> find_merge_point(const VI &fullpath, int fulltail, const VI &subpath, int subtail, int depth){
 //     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
@@ -1671,7 +1681,7 @@ int compression(const string &filename, int depth, int search_step=INF){
 
     auto result = actions;
     result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step);
-    // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)));
+    // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
     // result = wildcard_finish(result);
     // result = same_state_skip(result);
@@ -1941,7 +1951,6 @@ int main() {
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{283000}){
     REP(i, case_num){
-    // FOR(i, 387, case_num){
     // RREP(i, case_num){
     // FOR(i,  30, case_num){
     // FOR(i,  150, case_num){
@@ -1974,13 +1983,13 @@ int main() {
         // double score = annealing(output_filename, timer, 100, 100);
         // double score = search(output_filename, false, 1);
         // double score = search(output_filename, true, 1);
-        // double score=0;
+        double score=0;
         // double score=run_WreathSolver(output_filename);
 
         // double score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
 
         // double score=compression(output_filename, TARGET[puzzle_type]);
-        double score=compression(output_filename, TARGET[puzzle_type], 1000);
+        // double score=compression(output_filename, TARGET[puzzle_type], 100);
         // double score=kstep_replace(output_filename, TARGET[puzzle_type]);
 
         check_answer(output_filename);
