@@ -1067,11 +1067,12 @@ struct RandomWalk{
 };
 
 // 保存した解のチェック
-void check_answer(const string &filename){
+int check_answer(const string &filename){
     auto actions=load_actions(filename);
     auto result = simulation(initial_state, actions);
     int mistake = get_mistakes(result);
     assert(mistake<=num_wildcards);
+    return SZ(actions);
 }
 
 double annealing(const string &filename, ChronoTimer &timer, int loop_max, int verbose){
@@ -1343,7 +1344,8 @@ VI greedy_improve(const VI &action, int depth){
 void dfs(
     const VI &state, VI &path, int same_action_num, size_t maxdepth, 
     ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, tuple<int,uint64_t,int>>& visit, 
-    uint64_t prev_hash, pair<int, uint64_t> &to_end
+    uint64_t prev_hash, pair<int, uint64_t> &to_end,
+    int random_prune=0
 ){
     if (path.size() > maxdepth) return ;
     auto hash=zhash.hash(state);
@@ -1353,6 +1355,8 @@ void dfs(
     if(num_wildcards!=0 && SZ(path)<to_end.first && get_mistakes(state)<=num_wildcards)
         to_end={SZ(path), hash};
     REP(a, allowed_action_num*2){
+        if (random_prune && get_rand(100)<random_prune)
+            continue;
         int next_same_action_num=1;
         if(!path.empty()){
             // 逆操作
@@ -1371,13 +1375,13 @@ void dfs(
                 continue;
         }
         path.emplace_back(a);
-        dfs(do_action(state, a), path, next_same_action_num, maxdepth, zhash, visit, hash, to_end);
+        dfs(do_action(state, a), path, next_same_action_num, maxdepth, zhash, visit, hash, to_end, random_prune);
         path.pop_back();
     }
 }
 
 #pragma omp declare reduction(maximum_tuple : tuple<int,int,VI> : omp_out=(omp_out>omp_in ? omp_out : omp_in)) initializer(omp_priv = omp_orig)
-VI dual_greedy_improve(const VI &action, int depth, int search_step=INF){
+VI dual_greedy_improve(const VI &action, int depth, int search_step=INF, int random_prune=0){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
     VVI states{initial_state};
@@ -1392,7 +1396,7 @@ VI dual_greedy_improve(const VI &action, int depth, int search_step=INF){
     #pragma omp parallel for
     REP(i, SZ(states)){
         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit; VI path;
-        dfs(states[i], path, 0, depth, zhash, visit, 0, to_end[i]);
+        dfs(states[i], path, 0, depth, zhash, visit, 0, to_end[i], random_prune);
         hash_to_depth[i]=visit;
         dump(i)
         dump(hash_to_depth[i].size())
@@ -1437,7 +1441,7 @@ VI dual_greedy_improve(const VI &action, int depth, int search_step=INF){
     return result;
 }
 
-VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step){
+VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step, int random_prune=0){
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
     VVI states{initial_state};
@@ -1454,7 +1458,7 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step){
         VI path;
         unordered_map<uint64_t, tuple<int,uint64_t,int>> visit1;
         pair<int, uint64_t> to_end{INF,0};
-        dfs(states[i], path, 0, depth, zhash, visit1, 0, to_end);
+        dfs(states[i], path, 0, depth, zhash, visit1, 0, to_end, random_prune);
         dump(visit1.size())
         int imp=SZ(action) - to_end.first - i;
         if(imp>0){
@@ -1470,7 +1474,7 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step){
             VI path;
             unordered_map<uint64_t, tuple<int,uint64_t,int>> visit2;
             pair<int, uint64_t> to_end{INF,0};
-            dfs(states[j], path, 0, depth, zhash, visit2, 0, to_end);
+            dfs(states[j], path, 0, depth, zhash, visit2, 0, to_end, random_prune);
 
             for(auto [hash1, value1]: visit1){
                 auto it2=visit2.find(hash1);
@@ -1675,12 +1679,12 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step){
 // }
 
 // 解の圧縮
-int compression(const string &filename, int depth, int search_step=INF){
+int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
     auto actions=load_actions(filename);
     dump(SZ(actions))
 
     auto result = actions;
-    result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step);
+    result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
     // result = wildcard_finish(result);
@@ -1974,25 +1978,27 @@ int main() {
             continue;
         OUT("id", i);
         // if(num_wildcards==0)continue;
+        double score=0;
 
         string output_filename="output/"+to_string(i)+".txt";
-        // double score=ida_solve(output_filename, false);
-        // double score=ida_solve(output_filename, true);
+        // score=ida_solve(output_filename, false);
+        // score=ida_solve(output_filename, true);
 
-        // double score = annealing(output_filename, timer, 5000, 100);
-        // double score = annealing(output_filename, timer, 100, 100);
-        // double score = search(output_filename, false, 1);
-        // double score = search(output_filename, true, 1);
-        double score=0;
-        // double score=run_WreathSolver(output_filename);
+        // score = annealing(output_filename, timer, 5000, 100);
+        // score = annealing(output_filename, timer, 100, 100);
+        // score = search(output_filename, false, 1);
+        // score = search(output_filename, true, 1);
+        // score=run_WreathSolver(output_filename);
 
-        // double score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
+        // score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
 
-        // double score=compression(output_filename, TARGET[puzzle_type]);
-        // double score=compression(output_filename, TARGET[puzzle_type], 100);
-        // double score=kstep_replace(output_filename, TARGET[puzzle_type]);
+        // score=compression(output_filename, TARGET[puzzle_type]);
+        // score=compression(output_filename, TARGET[puzzle_type], 100);
+        // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
+        // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
+        // score=kstep_replace(output_filename, TARGET[puzzle_type]);
 
-        check_answer(output_filename);
+        score=check_answer(output_filename);
         timer.end();
         if(DEBUG) {
             auto time = timer.time();
