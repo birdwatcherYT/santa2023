@@ -1499,6 +1499,63 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step, 
     return result;
 }
 
+// // 良いと思った方向に進みまくる
+// optional<VI> best_search(
+//     const VI& state, int current_best_size, ZobristHashing<uint64_t> &zhash,
+//     VI &actions, unordered_set<uint64_t> &visit, long &count
+// ){
+//     if(SZ(actions)>=current_best_size)
+//         return nullopt;
+//     if(++count%100000==0)
+//         dump(count)
+
+//     // mistake, act, hash
+//     MINPQ<tuple<int, int, uint64_t>> candidate;
+//     REP(a, allowed_action_num*2){
+//         // 逆操作
+//         if(!actions.empty() && (a+allowed_action_num==actions.back() || a==actions.back()+allowed_action_num))
+//             continue;
+//         auto next = do_action(state, a);
+//         auto next_hash = zhash.hash(next);
+//         if(visit.contains(next_hash))
+//             continue;
+//         int mis=get_mistakes(state);
+//         if(mis<=num_wildcards){
+//             actions.emplace_back(a);
+//             return actions;
+//         }
+//         candidate.emplace(mis, a, next_hash);
+//     }
+
+//     while(!candidate.empty()){
+//         auto[_,a,hash]=candidate.top();candidate.pop();
+//         actions.emplace_back(a);
+//         visit.emplace(hash);
+//         // if(visit.size()%100000==0)
+//         //     dump(visit.size())
+//         auto res=best_search(do_action(state, a), current_best_size, zhash, actions, visit, count);
+//         visit.erase(hash);
+//         if(res)return res;
+//         actions.pop_back();
+//     }
+//     return nullopt;
+// }
+// int best_search(const string &filename,int max_depth=10){
+//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+//     VI actions;
+//     unordered_set<uint64_t> visit;
+//     long count=0;
+//     auto res=best_search(initial_state, max_depth, zhash, actions, visit, count);
+//     if (res){
+//         auto ans=res.value();
+//         OUT("update!!!!!", SZ(ans));
+//         save_actions(filename, ans);
+//         check_answer(filename);
+//         return SZ(ans);
+//     }
+//     return INF;
+// }
+
 // optional<VI> find_merge_point(const VI &fullpath, int fulltail, const VI &subpath, int subtail, int depth){
 //     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
@@ -1678,16 +1735,53 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step, 
 //     return result;
 // }
 
+VI cancel_opposite(const VI& actions){
+    VI result;
+    MII samegroup;
+    int prev_group_id=-1;
+    for(int a: actions){
+        int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+        if(prev_group_id!=to_group_id[act]){
+            for(auto[_a, cnt]: samegroup){
+                int loop=abs(cnt)%to_rotate_num[_a];
+                int new_a=(cnt<0) ? (_a+allowed_action_num) : _a;
+                if(loop > to_rotate_num[_a]/2){
+                    new_a=new_a<allowed_action_num? (new_a+allowed_action_num) : (new_a-allowed_action_num);
+                    loop=to_rotate_num[_a]-cnt;
+                }
+                REP(_, loop)
+                    result.emplace_back(new_a);
+            }
+            samegroup.clear();
+        }
+        if(act==a)samegroup[act]++;
+        else samegroup[act]--;
+        prev_group_id=to_group_id[act];
+    }
+    for(auto[_a, cnt]: samegroup){
+        int loop=abs(cnt)%to_rotate_num[_a];
+        int new_a=(cnt<0) ? (_a+allowed_action_num) : _a;
+        if(loop > to_rotate_num[_a]/2){
+            new_a=new_a<allowed_action_num? (new_a+allowed_action_num) : (new_a-allowed_action_num);
+            loop=to_rotate_num[_a]-cnt;
+        }
+        REP(_, loop)
+            result.emplace_back(new_a);
+    }
+    return result;
+}
+
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
     auto actions=load_actions(filename);
     dump(SZ(actions))
 
     auto result = actions;
-    result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
+    // result = wildcard_finish(result);
+    result = cancel_opposite(result);
+    // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
-    // result = wildcard_finish(result);
     // result = same_state_skip(result);
     // result = loop_compress(result);
 
@@ -1992,7 +2086,7 @@ int main() {
 
         // score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
 
-        // score=compression(output_filename, TARGET[puzzle_type]);
+        score=compression(output_filename, TARGET[puzzle_type]);
         // score=compression(output_filename, TARGET[puzzle_type], 100);
         // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
         // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
