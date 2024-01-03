@@ -1556,6 +1556,90 @@ VI dual_greedy_improve_low_memory(const VI &action, int depth, int search_step, 
 //     return INF;
 // }
 
+
+// void dfs_step(
+//     const VI &state, VI &path, int same_action_num, size_t maxdepth, 
+//     ZobristHashing<uint64_t> &zhash, unordered_set<uint64_t>& visit, 
+//     int &best_mistake, vector<pair<VI, int>> &best_paths
+// ){
+//     if (path.size() > maxdepth) return;
+//     auto hash=zhash.hash(state);
+//     if(!path.empty()){
+//         if (visit.contains(hash))
+//             return;
+//         int mis=get_mistakes(state);
+//         if(mis<best_mistake){
+//             best_paths.clear();
+//             best_paths.emplace_back(path, same_action_num);
+//             best_mistake=mis;
+//         }else if(mis==best_mistake){
+//             best_paths.emplace_back(path, same_action_num);
+//         }
+//     }
+//     visit.emplace(hash);
+//     REP(a, allowed_action_num*2){
+//         int next_same_action_num=1;
+//         if(!path.empty()){
+//             // 逆操作
+//             if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+//                 continue;
+//             // グループ順序
+//             int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+//             int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+//             if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+//                 continue;
+//             // より短い別の動作で置換できる場合
+//             if(path.back()==a)
+//                 next_same_action_num = same_action_num+1;
+//             if(2*next_same_action_num>to_rotate_num[act] 
+//                 || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+//                 continue;
+//         }
+//         path.emplace_back(a);
+//         dfs_step(do_action(state, a), path, next_same_action_num, maxdepth, zhash, visit, best_mistake, best_paths);
+//         path.pop_back();
+//     }
+// }
+
+// int best_search_step_width(const string &filename, int step_width, int maxdepth){
+//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+//     VI actions;
+
+//     unordered_set<uint64_t> visit;
+//     auto state=initial_state;
+//     int same_action_num=0;
+
+//     while(SZ(actions)<=maxdepth){
+//         VI path;
+//         int best_mistake=INF;
+//         vector<pair<VI, int>> best_paths;
+
+//         dfs_step(state, path, same_action_num, step_width, zhash, visit, best_mistake, best_paths);
+//         // dump(SZ(best_paths))
+//         dump(best_mistake)
+//         dump(SZ(actions))
+//         assert(SZ(best_paths)>=1);
+//         for(auto&[paths, same]: best_paths){
+//             // dump(SZ(paths))
+//             for(int a: paths){
+//                 actions.emplace_back(a);
+//                 state=do_action(state, a);
+//             }
+//             same_action_num=same;
+//             // TODO: 複数にする
+//             break;
+//         }
+//         if(best_mistake<=num_wildcards){
+//             OUT("update!!!!!", SZ(actions));
+//             save_actions(filename, actions);
+//             check_answer(filename);
+//             return SZ(actions);
+//         }
+//     }
+//     return INF;
+// }
+
+
 // optional<VI> find_merge_point(const VI &fullpath, int fulltail, const VI &subpath, int subtail, int depth){
 //     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
@@ -1747,7 +1831,7 @@ VI cancel_opposite(const VI& actions){
                 int new_a=(cnt<0) ? (_a+allowed_action_num) : _a;
                 if(loop > to_rotate_num[_a]/2){
                     new_a=new_a<allowed_action_num? (new_a+allowed_action_num) : (new_a-allowed_action_num);
-                    loop=to_rotate_num[_a]-cnt;
+                    loop=to_rotate_num[_a]-loop;
                 }
                 REP(_, loop)
                     result.emplace_back(new_a);
@@ -1763,13 +1847,102 @@ VI cancel_opposite(const VI& actions){
         int new_a=(cnt<0) ? (_a+allowed_action_num) : _a;
         if(loop > to_rotate_num[_a]/2){
             new_a=new_a<allowed_action_num? (new_a+allowed_action_num) : (new_a-allowed_action_num);
-            loop=to_rotate_num[_a]-cnt;
+            loop=to_rotate_num[_a]-loop;
         }
         REP(_, loop)
             result.emplace_back(new_a);
     }
     return result;
 }
+
+void generate_all(deque<int>& actions, const VI &index, int maxdepth, 
+             ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, deque<int>>>> &bestaction){
+    if(SZ(actions)>maxdepth)return;
+    bestaction[zhash.hash(index)].emplace(SZ(actions), actions);
+    REP(a, allowed_action_num*2){
+        actions.emplace_back(a);
+        generate_all(actions, do_action(index, a), maxdepth, zhash, bestaction);
+        actions.pop_back();
+    }
+}
+
+void generate_sorted(deque<int>& path, const VI &index, int same_action_num, int maxdepth, 
+             ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, deque<int>>>> &bestaction){
+    if(SZ(path)>maxdepth)return;
+    bestaction[zhash.hash(index)].emplace(SZ(path), path);
+    REP(a, allowed_action_num*2){
+        int next_same_action_num=1;
+        if(!path.empty()){
+            // 逆操作
+            if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                continue;
+            // グループ順序
+            int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+            int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+            if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                continue;
+            // より短い別の動作で置換できる場合
+            if(path.back()==a)
+                next_same_action_num = same_action_num+1;
+            if(2*next_same_action_num>to_rotate_num[act] 
+                || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                continue;
+        }
+        path.emplace_back(a);
+        generate_sorted(path, do_action(index, a), next_same_action_num, maxdepth, zhash, bestaction);
+        path.pop_back();
+    }
+}
+
+VI kstep_replace(const VI &action, int k, bool sorted){
+    map<deque<int>, deque<int>> to_shortest;
+    {
+        unordered_map<uint64_t, set<pair<int, deque<int>>>> bestaction;
+        ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+        VI index(state_length);
+        ARANGE(index);
+        deque<int> action;
+        if(sorted)
+            generate_sorted(action, index, 0, k, zhash, bestaction);
+        else
+            generate_all(action, index, k, zhash, bestaction);
+        dump(bestaction.size())
+
+        for(auto& [_, s]: bestaction){
+            int minsize=s.begin()->first;
+            auto &minpat=s.begin()->second;
+            for(auto it=s.rbegin();it!=s.rend() && it->first > minsize;++it)
+                to_shortest[it->second]=minpat;
+            s.clear();// for memory
+        }
+        dump(to_shortest.size())
+    }
+    deque<int> part(action.begin(), action.begin()+min(k, SZ(action)));
+
+    VI result;
+    for(int i=k;i<SZ(action); ++i){
+        auto it=to_shortest.find(part);
+        if(it!=to_shortest.end()){
+            OUT("update", SZ(part), "->", SZ(it->second));
+            result.insert(result.end(), it->second.begin(), it->second.end());
+            part.clear();
+            part.insert(part.end(), action.begin()+i, action.end()+min(i+k, SZ(action)));
+        }else{
+            result.emplace_back(part.front());
+            part.pop_front();
+            part.emplace_back(action[i]);
+        }
+    }
+    auto it=to_shortest.find(part);
+    if(it!=to_shortest.end()){
+        OUT("update", SZ(part), "->", SZ(it->second));
+        result.insert(result.end(), it->second.begin(), it->second.end());
+    }else{
+        result.insert(result.end(), part.begin(), part.end());
+    }
+    return result;
+}
+
 
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
@@ -1779,6 +1952,9 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     auto result = actions;
     // result = wildcard_finish(result);
     result = cancel_opposite(result);
+    // result = kstep_replace(result, depth, true);
+    // result = kstep_replace(result, depth, false);
+
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
@@ -1975,50 +2151,19 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 //     return INF;
 // }
 
-void generate(const string& name, const VI &index, int depth, int maxdepth, 
-             ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, string>>> &bestaction){
-    if(depth>maxdepth)return;
-    bestaction[zhash.hash(index)].emplace(depth, name);
-    REP(a, allowed_action_num*2)
-        generate(name+"/"+get_action_name(a), do_action(index, a), depth+1, maxdepth, zhash, bestaction);
-}
-
-int kstep_replace(const string &filename, int k){
-    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
-    VI index(state_length);
-    ARANGE(index);
-    unordered_map<uint64_t, set<pair<int, string>>> bestaction;
-    generate("", index, 0, k, zhash, bestaction);
-    dump(bestaction.size())
-
-    auto action=load_actions(filename);
-    auto act_str = action_decode(action, "/");
-    for(auto &[h, s]: bestaction){
-        const auto &best_str=s.begin()->second;
-        for(auto it=s.rbegin(); it!=s.rend(); it++)
-            act_str=regex_replace(act_str, regex(it->second), best_str);
-    }
-    auto result = action_encode(act_str, '/');
-    if(SZ(result)<SZ(action)){
-        OUT("saved", SZ(action), "->", SZ(result));
-        save_actions(filename, result);
-    }
-    return SZ(result);
-}
-
 
 const string DATA_DIR = "./data/";
 map<string, int> TARGET{
-       {"cube_2/2/2", 5},
-       {"cube_3/3/3", 4},
-       {"cube_4/4/4", 4},
-       {"cube_5/5/5", 3},
-       {"cube_6/6/6", 3},
-       {"cube_7/7/7", 3},
-       {"cube_8/8/8", 3},
-       {"cube_9/9/9", 3},
-       {"cube_10/10/10", 3},
-       {"cube_19/19/19", 2},
+    //    {"cube_2/2/2", 5},
+    //    {"cube_3/3/3", 4},
+    //    {"cube_4/4/4", 4},
+    //    {"cube_5/5/5", 3},
+    //    {"cube_6/6/6", 3},
+    //    {"cube_7/7/7", 3},
+    //    {"cube_8/8/8", 3},
+    //    {"cube_9/9/9", 3},
+    //    {"cube_10/10/10", 3},
+    //    {"cube_19/19/19", 2},
        {"cube_33/33/33", 1},
        {"wreath_6/6", 12},
        {"wreath_7/7", 12},
@@ -2085,12 +2230,12 @@ int main() {
         // score=run_WreathSolver(output_filename);
 
         // score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
-
-        score=compression(output_filename, TARGET[puzzle_type]);
-        // score=compression(output_filename, TARGET[puzzle_type], 100);
+        // best_search_step_width(output_filename, 4, 1000);
+ 
+        // score=compression(output_filename, TARGET[puzzle_type]);
+        score=compression(output_filename, TARGET[puzzle_type], 100);
         // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
         // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
-        // score=kstep_replace(output_filename, TARGET[puzzle_type]);
 
         score=check_answer(output_filename);
         timer.end();
