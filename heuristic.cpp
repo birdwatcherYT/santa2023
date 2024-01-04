@@ -1970,38 +1970,42 @@ optional<VI> rotate_all(const VI& state, int gid, const VI& path, map<int, int> 
     if(res)return res.value();
 
     auto s=state, p=path;
-    int loop=(1+group_to_rotate_num[gid])/2;
+    int rotate=group_to_rotate_num[gid];
+    int loop=(1+rotate)/2;
+    int save=size_count[rotate];
     REP(i, loop){
+        size_count[rotate]--;
+        if(size_count[rotate]<0)
+            break;
         for(int a:group[gid]){
             s=do_action(s, a);
             p.emplace_back(a);
         }
-        size_count[group_to_rotate_num[gid]]-=i+1;
-        if(size_count[group_to_rotate_num[gid]]>=0)
-            res=rotate_all(s, gid+1, p, size_count);
-        size_count[group_to_rotate_num[gid]]+=i+1;
+        res=rotate_all(s, gid+1, p, size_count);
         // auto res=rotate_all(s, gid+1, p, count-i-1);
         // auto res=rotate_all(s, gid+1, p);
         if(res)return res.value();
     }
     s=state, p=path;
+    size_count[rotate]=save;
     REP(i, loop-1){
+        size_count[rotate]--;
+        if(size_count[rotate]<0)
+            break;
         for(int a:group[gid]){
             s=do_action(s, inverse(a));
             p.emplace_back(inverse(a));
         }
-        size_count[group_to_rotate_num[gid]]-=i+1;
-        if(size_count[group_to_rotate_num[gid]]>=0)
-            res=rotate_all(s, gid+1, p, size_count);
-        size_count[group_to_rotate_num[gid]]+=i+1;
+        res=rotate_all(s, gid+1, p, size_count);
         // auto res=rotate_all(s, gid+1, p, count-i-1);
         // auto res=rotate_all(s, gid+1, p);
         if(res)return res.value();
     }
+    size_count[rotate]=save;
     return nullopt;
 }
 
-VI summerize_rotate(const VI& action){
+VI summerize_rotate(const VI& action, int intercept=0){
     // 前処理
     VI index1(state_length), index2(state_length);
     map<int, MII> group_id_to_converter;
@@ -2049,7 +2053,7 @@ VI summerize_rotate(const VI& action){
     auto subprocess = [&]() {
         if (group_id_to_converter.contains(prev_group_id)){
             int best_add_rotate=0;
-            int best_sumrotate=0;
+            int best_sumrotate=intercept;
             VI best_new_samegroup(allowed_action_num);
             for(int j: group[prev_group_id]){
                 best_new_samegroup[j]=samegroup[j]%to_rotate_num[j];
@@ -2178,13 +2182,14 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     // result = cancel_opposite(result);
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
-    result=summerize_rotate(result);
-    // result=summerize_rotate(result);
+    result=summerize_rotate(result, 0);
+    // result=summerize_rotate(result, 1);
+    // result=summerize_rotate(result, -1);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
-    result = greedy_improve(result, depth);
-    // result = same_state_skip(result);
-    // result = loop_compress(result);
+    // result = greedy_improve(result, depth);
+    result = same_state_skip(result);
+    result = loop_compress(result);
 
     int mistake = get_mistakes(simulation(initial_state, result));
     assert(mistake<=num_wildcards);
