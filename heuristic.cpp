@@ -318,9 +318,14 @@ VI inverse(const VI &move){
         inv[move[i]]=i;
     return inv;
 }
+int inverse(int a){
+    return a<allowed_action_num ? a+allowed_action_num : a-allowed_action_num;
+}
+
 // 
 VI to_group_id;//(allowed_action_num);
 VI to_order_in_group;//(allowed_action_num);
+VVI group;
 
 void devide_independent_action(){
     vector<SI> changes(allowed_action_num);
@@ -333,7 +338,7 @@ void devide_independent_action(){
     }
     to_group_id.assign(allowed_action_num, 0);
     to_order_in_group.assign(allowed_action_num, 0);
-    VVI group;
+    group.clear();
     vector<SI> group_set;
     REP(i, allowed_action_num){
         bool change=false;
@@ -355,8 +360,10 @@ void devide_independent_action(){
     dump(group)
 }
 VI to_rotate_num;
+VI group_to_rotate_num;
 void inv_operation(){
     to_rotate_num.assign(allowed_action_num, 0);
+    group_to_rotate_num.assign(group.size(), 0);
     REP(a, allowed_action_num){
         VI index_arange(SZ(initial_state));
         ARANGE(index_arange);
@@ -370,6 +377,8 @@ void inv_operation(){
                 break;
         }
         to_rotate_num[a]= rotate==10000 ? INF : rotate;
+        assert(group_to_rotate_num[to_group_id[a]]==0 || (group_to_rotate_num[to_group_id[a]] == to_rotate_num[a]));
+        group_to_rotate_num[to_group_id[a]] = to_rotate_num[a];
     }
     dump(to_rotate_num)
 }
@@ -1943,6 +1952,198 @@ VI kstep_replace(const VI &action, int k, bool sorted){
     return result;
 }
 
+optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
+// optional<VI> rotate_all(const VI& state, int gid, const VI& path){
+    if(count<0)
+        return nullopt;
+    if(gid>=SZ(group)){
+        if(get_mistakes(state)<=num_wildcards){
+            // return cancel_opposite(path);
+            return (path);
+            dump(path)
+        }
+        return nullopt;
+    }
+    auto res=rotate_all(state, gid+1, path, count);
+    // auto res=rotate_all(state, gid+1, path);
+    if(res)return res.value();
+
+    auto s=state, p=path;
+    int loop=(1+group_to_rotate_num[gid])/2;
+    REP(i, loop){
+        for(int a:group[gid]){
+            s=do_action(s, a);
+            p.emplace_back(a);
+        }
+        auto res=rotate_all(s, gid+1, p, count-i-1);
+        // auto res=rotate_all(s, gid+1, p);
+        if(res)return res.value();
+    }
+    s=state, p=path;
+    REP(i, loop-1){
+        for(int a:group[gid]){
+            s=do_action(s, inverse(a));
+            p.emplace_back(inverse(a));
+        }
+        auto res=rotate_all(s, gid+1, p, count-i-1);
+        // auto res=rotate_all(s, gid+1, p);
+        if(res)return res.value();
+    }
+    return nullopt;
+}
+
+VI summerize_rotate(const VI& action){
+    // 前処理
+    VI index1(state_length), index2(state_length);
+    map<int, MII> group_id_to_converter;
+    REP(gid, SZ(group)){
+        const auto &g=group[gid];
+        ARANGE(index1);
+        ARANGE(index2);
+        for(int a:g)
+            index1=do_action(index1, a);
+        MII converter;
+        REP(a1, allowed_action_num*2){
+            auto tmp1=do_action(index1, a1);
+            // 対応する操作を求める
+            REP(a2, allowed_action_num*2){
+                auto tmp2=do_action(index2, a2);
+                for(int a:g)
+                    tmp2=do_action(tmp2, a);
+                if(tmp1==tmp2){
+                    converter[a1]=a2;
+                    break;
+                }
+            }
+        }
+        if(SZ(converter)==allowed_action_num*2)
+            group_id_to_converter[gid]=converter;
+    }
+    // dump(group_id_to_converter)
+
+    VI result;
+    VI samegroup(allowed_action_num, 0);
+    int prev_group_id=-1;
+    int org_prev_group_id=-1;
+    // gid, count
+    vector<pair<int, int>> mapping;
+    vector<pair<int, int>> mapping_org;
+
+    auto convert = [&](int i, vector<pair<int, int>> &mapping){
+        int new_a=i;
+        for(auto&[gid, count]: mapping)REP(_, count)
+            new_a=group_id_to_converter[gid][new_a];
+        return new_a;
+    };
+    auto to_base_act=[&](int a){
+        return a<allowed_action_num ? a : a-allowed_action_num;
+    };
+
+    auto subprocess = [&]() {
+        if (group_id_to_converter.contains(prev_group_id)){
+            int best_add_rotate=0;
+            int best_sumrotate=0;
+            VI best_new_samegroup(allowed_action_num);
+            for(int j: group[prev_group_id]){
+                best_new_samegroup[j]=samegroup[j]%to_rotate_num[j];
+                if(abs(best_new_samegroup[j])>to_rotate_num[j]/2)
+                    best_new_samegroup[j]=best_new_samegroup[j]>0 ? (best_new_samegroup[j]-to_rotate_num[j]) : (best_new_samegroup[j]+to_rotate_num[j]); 
+                best_sumrotate+=abs(best_new_samegroup[j]);
+            }
+            for(int i: group[prev_group_id]){
+                VI new_samegroup(allowed_action_num);
+                int sumrotate=0;
+                for(int j: group[prev_group_id]){
+                    new_samegroup[j]=(samegroup[j]-samegroup[i])%to_rotate_num[j];
+                    if(abs(new_samegroup[j])>to_rotate_num[j]/2)
+                        new_samegroup[j]=new_samegroup[j]>0 ? (new_samegroup[j]-to_rotate_num[j]) : (new_samegroup[j]+to_rotate_num[j]); 
+                    sumrotate+=abs(new_samegroup[j]);
+                }
+                // mappingは正にしておく
+                int t=(samegroup[i]%group_to_rotate_num[prev_group_id]+group_to_rotate_num[prev_group_id])%group_to_rotate_num[prev_group_id];
+                // if(sumrotate<best_sumrotate || (sumrotate==best_sumrotate && t<best_add_rotate))
+                if(sumrotate<best_sumrotate)
+                    best_new_samegroup=new_samegroup, best_sumrotate=sumrotate, best_add_rotate=t;
+            }
+            if(best_add_rotate!=0){
+                dump(samegroup)
+                dump(best_new_samegroup)
+                dump(best_add_rotate)
+                mapping.emplace_back(prev_group_id, best_add_rotate);
+                mapping_org.emplace_back(org_prev_group_id, best_add_rotate);
+            }
+            samegroup=best_new_samegroup;
+        }
+        REP(i, allowed_action_num)if(samegroup[i]!=0){
+            int new_a=i;
+            new_a=(samegroup[i]<0) ? inverse(new_a) : new_a;
+            // 
+            int loop=abs(samegroup[i]);
+            REP(_, loop)
+                result.emplace_back(new_a);
+        }
+    };
+
+    for(int a: action){
+        int new_a=convert(a, mapping);
+        int act=to_base_act(new_a);
+        if(prev_group_id!=to_group_id[act]){
+            subprocess();
+            fill(ALL(samegroup), 0);
+            new_a=convert(a, mapping);
+            act=to_base_act(new_a);
+        }
+        if(new_a<allowed_action_num)samegroup[act]++;
+        else samegroup[act]--;
+        prev_group_id=to_group_id[act];
+        org_prev_group_id=to_group_id[to_base_act(a)];
+    }
+    subprocess();
+
+    vector<pair<int, int>> new_mapping;
+    int pid=-1, sum=0;
+    for(auto&[gid, count]: mapping){
+        if(pid!=gid){
+            if(pid>=0)
+                new_mapping.emplace_back(pid, sum%group_to_rotate_num[pid]);
+            pid=gid, sum=count;
+        }else
+            sum+=count;
+    }
+    if(pid>=0)
+        new_mapping.emplace_back(pid, sum%group_to_rotate_num[pid]);
+    mapping=new_mapping;
+    // TODO: ベスト挿入箇所を探索する
+    // int need_rotate=0;
+    // for(auto&[gid, count]: mapping){
+    //     int loop=count>group_to_rotate_num[gid]/2 ? (count-group_to_rotate_num[gid]) : count;
+    //     need_rotate+=abs(loop);
+    // }
+    // dump(need_rotate)
+    // // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI());
+    // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), need_rotate);
+    // // assert(add_rotate);
+    // if(add_rotate)
+    // // // result.insert(result.end(), add_rotate.value().begin(), add_rotate.value().end());
+
+    // dump(solution_state)
+    // dump(mapping)
+    RITR(it, mapping){
+        auto&[gid, count] = *it;
+        // countは正
+        int loop=count>group_to_rotate_num[gid]/2 ? (count-group_to_rotate_num[gid]) : count;
+        bool inv = (loop<0);
+        loop=abs(loop);
+        for(int a: group[gid]){
+            int act = inv ? inverse(a) : a;
+            REP(_, loop)
+                result.emplace_back(act);
+        }
+    }
+    // dump(simulation(initial_state, result))
+    return result;
+}
+
 
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
@@ -1951,10 +2152,11 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 
     auto result = actions;
     // result = wildcard_finish(result);
-    result = cancel_opposite(result);
+    // result = cancel_opposite(result);
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
-
+    result=summerize_rotate(result);
+    result=summerize_rotate(result);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
@@ -2154,16 +2356,16 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 
 const string DATA_DIR = "./data/";
 map<string, int> TARGET{
-    //    {"cube_2/2/2", 5},
-    //    {"cube_3/3/3", 4},
-    //    {"cube_4/4/4", 4},
-    //    {"cube_5/5/5", 3},
-    //    {"cube_6/6/6", 3},
-    //    {"cube_7/7/7", 3},
-    //    {"cube_8/8/8", 3},
-    //    {"cube_9/9/9", 3},
-    //    {"cube_10/10/10", 3},
-    //    {"cube_19/19/19", 2},
+       {"cube_2/2/2", 5},
+       {"cube_3/3/3", 4},
+       {"cube_4/4/4", 4},
+       {"cube_5/5/5", 3},
+       {"cube_6/6/6", 3},
+       {"cube_7/7/7", 3},
+       {"cube_8/8/8", 3},
+       {"cube_9/9/9", 3},
+       {"cube_10/10/10", 3},
+       {"cube_19/19/19", 2},
        {"cube_33/33/33", 1},
        {"wreath_6/6", 12},
        {"wreath_7/7", 12},
@@ -2193,9 +2395,9 @@ int main() {
     // for(int i: VI{255000, 256000, 283000}){
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{283000}){
+    // for(int i: VI{259}){
     REP(i, case_num){
     // RREP(i, case_num){
-    // FOR(i,  30, case_num){
     // FOR(i,  150, case_num){
     // FOR(i,  130, 150){
     // FOR(i, 284, case_num){
