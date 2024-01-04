@@ -288,10 +288,12 @@ VI initial_state;
 VI solution_state;
 int allowed_action_num;
 VS allowed_moves_name;
-VVI allowed_moves;
+// VVI allowed_moves;
+vector<unordered_map<int,int>> allowed_moves;
 int num_wildcards;
 // 逆操作
-VVI allowed_moves_inverse;
+// VVI allowed_moves_inverse;
+vector<unordered_map<int,int>> allowed_moves_inverse;
 // vector<PII> same_color_index;
 
 #define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
@@ -300,8 +302,10 @@ VVI allowed_moves_inverse;
 VI do_action(const VI& state, int action_id){
     auto s=state;
     const auto &action = get_action(action_id);
-    REP(i, state_length)
-        s[i]=state[action[i]];
+    // REP(i, state_length)
+    //     s[i]=state[action[i]];
+    for(auto [i, v]: action)
+        s[i]=state[v];
     return s;
 }
 
@@ -312,6 +316,12 @@ VI simulation(const VI& state, const VI &actions){
     return s;
 }
 
+unordered_map<int,int> inverse(const unordered_map<int,int> &move){
+    unordered_map<int,int> inv;
+    for(auto[i,v]:  move)
+        inv[v]=i;
+    return inv;
+}
 VI inverse(const VI &move){
     auto inv=move;
     REP(i, SZ(inv))
@@ -331,9 +341,14 @@ void devide_independent_action(){
     vector<SI> changes(allowed_action_num);
     REP(i, allowed_action_num){
         const auto& move=allowed_moves[i];
-        REP(j, SZ(move))if(j!=move[j]){
+        // REP(j, SZ(move))if(j!=move[j]){
+        //     changes[i].emplace(j);
+        //     changes[i].emplace(move[j]);
+        // }
+        for(auto [j, v] : move){
+            assert(j!=v);
             changes[i].emplace(j);
-            changes[i].emplace(move[j]);
+            changes[i].emplace(v);
         }
     }
     to_group_id.assign(allowed_action_num, 0);
@@ -489,14 +504,21 @@ void data_load(istream &is){
     }
     is >> allowed_action_num;
     allowed_moves_name.assign(allowed_action_num, "");
-    allowed_moves.assign(allowed_action_num, VI(state_length));
+    // allowed_moves.assign(allowed_action_num, VI(state_length));
+    allowed_moves.assign(allowed_action_num, unordered_map<int,int>());
     REP(i, allowed_action_num){
-        is  >> allowed_moves_name[i]
-            >> allowed_moves[i];
+        is  >> allowed_moves_name[i];
+            // >> allowed_moves[i];
+        REP(j, state_length){
+            int v;is>>v;
+            if(v!=j)
+                allowed_moves[i][j]=v;
+        }
     }
     is >> num_wildcards;
     // 逆操作
-    allowed_moves_inverse.assign(allowed_action_num, VI());
+    // allowed_moves_inverse.assign(allowed_action_num, VI());
+    allowed_moves_inverse.assign(allowed_action_num, unordered_map<int,int>());
     REP(i, allowed_action_num){
         allowed_moves_inverse[i]=inverse(allowed_moves[i]);
     }
@@ -2379,6 +2401,47 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 //         return SZ(res.value());
 //     }
 //     return INF;
+// }
+
+// optional<VI> rotate_all(const VI& state, int gid, const VI& path){
+//     if(gid>=SZ(group)){
+//         if(get_mistakes(state)<=num_wildcards)
+//             return path;
+//         return nullopt;
+//     }
+//     auto res=rotate_all(state, gid+1, path);
+//     if(res)return res.value();
+
+//     auto s=state, p=path;
+//     int rotate=group_to_rotate_num[gid];
+//     int loop=(1+rotate)/2;
+//     int save=size_count[rotate];
+//     REP(i, loop){
+//         size_count[rotate]--;
+//         if(size_count[rotate]<0)
+//             break;
+//         for(int a:group[gid]){
+//             s=do_action(s, a);
+//             p.emplace_back(a);
+//         }
+//         auto res=rotate_all(s, gid+1, p);
+//         if(res)return res.value();
+//     }
+//     s=state, p=path;
+//     size_count[rotate]=save;
+//     REP(i, loop-1){
+//         size_count[rotate]--;
+//         if(size_count[rotate]<0)
+//             break;
+//         for(int a:group[gid]){
+//             s=do_action(s, inverse(a));
+//             p.emplace_back(inverse(a));
+//         }
+//         auto res=rotate_all(s, gid+1, p);
+//         if(res)return res.value();
+//     }
+//     size_count[rotate]=save;
+//     return nullopt;
 // }
 
 
