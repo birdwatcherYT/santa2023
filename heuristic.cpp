@@ -1952,19 +1952,20 @@ VI kstep_replace(const VI &action, int k, bool sorted){
     return result;
 }
 
-optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
+optional<VI> rotate_all(const VI& state, int gid, const VI& path, map<int, int> &size_count){
+// optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
 // optional<VI> rotate_all(const VI& state, int gid, const VI& path){
-    if(count<0)
-        return nullopt;
+    // if(count<0)
+    //     return nullopt;
     if(gid>=SZ(group)){
         if(get_mistakes(state)<=num_wildcards){
             // return cancel_opposite(path);
             return (path);
-            dump(path)
         }
         return nullopt;
     }
-    auto res=rotate_all(state, gid+1, path, count);
+    auto res=rotate_all(state, gid+1, path, size_count);
+    // auto res=rotate_all(state, gid+1, path, count);
     // auto res=rotate_all(state, gid+1, path);
     if(res)return res.value();
 
@@ -1975,7 +1976,11 @@ optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
             s=do_action(s, a);
             p.emplace_back(a);
         }
-        auto res=rotate_all(s, gid+1, p, count-i-1);
+        size_count[group_to_rotate_num[gid]]-=i+1;
+        if(size_count[group_to_rotate_num[gid]]>=0)
+            res=rotate_all(s, gid+1, p, size_count);
+        size_count[group_to_rotate_num[gid]]+=i+1;
+        // auto res=rotate_all(s, gid+1, p, count-i-1);
         // auto res=rotate_all(s, gid+1, p);
         if(res)return res.value();
     }
@@ -1985,7 +1990,11 @@ optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
             s=do_action(s, inverse(a));
             p.emplace_back(inverse(a));
         }
-        auto res=rotate_all(s, gid+1, p, count-i-1);
+        size_count[group_to_rotate_num[gid]]-=i+1;
+        if(size_count[group_to_rotate_num[gid]]>=0)
+            res=rotate_all(s, gid+1, p, size_count);
+        size_count[group_to_rotate_num[gid]]+=i+1;
+        // auto res=rotate_all(s, gid+1, p, count-i-1);
         // auto res=rotate_all(s, gid+1, p);
         if(res)return res.value();
     }
@@ -2024,10 +2033,8 @@ VI summerize_rotate(const VI& action){
     VI result;
     VI samegroup(allowed_action_num, 0);
     int prev_group_id=-1;
-    int org_prev_group_id=-1;
     // gid, count
     vector<pair<int, int>> mapping;
-    vector<pair<int, int>> mapping_org;
 
     auto convert = [&](int i, vector<pair<int, int>> &mapping){
         int new_a=i;
@@ -2070,7 +2077,6 @@ VI summerize_rotate(const VI& action){
                 dump(best_new_samegroup)
                 dump(best_add_rotate)
                 mapping.emplace_back(prev_group_id, best_add_rotate);
-                mapping_org.emplace_back(org_prev_group_id, best_add_rotate);
             }
             samegroup=best_new_samegroup;
         }
@@ -2096,7 +2102,6 @@ VI summerize_rotate(const VI& action){
         if(new_a<allowed_action_num)samegroup[act]++;
         else samegroup[act]--;
         prev_group_id=to_group_id[act];
-        org_prev_group_id=to_group_id[to_base_act(a)];
     }
     subprocess();
 
@@ -2113,34 +2118,52 @@ VI summerize_rotate(const VI& action){
     if(pid>=0)
         new_mapping.emplace_back(pid, sum%group_to_rotate_num[pid]);
     mapping=new_mapping;
-    // TODO: ベスト挿入箇所を探索する
-    // int need_rotate=0;
-    // for(auto&[gid, count]: mapping){
-    //     int loop=count>group_to_rotate_num[gid]/2 ? (count-group_to_rotate_num[gid]) : count;
-    //     need_rotate+=abs(loop);
-    // }
-    // dump(need_rotate)
-    // // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI());
-    // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), need_rotate);
-    // // assert(add_rotate);
-    // if(add_rotate)
-    // // // result.insert(result.end(), add_rotate.value().begin(), add_rotate.value().end());
-
-    // dump(solution_state)
-    // dump(mapping)
-    RITR(it, mapping){
-        auto&[gid, count] = *it;
-        // countは正
-        int loop=count>group_to_rotate_num[gid]/2 ? (count-group_to_rotate_num[gid]) : count;
-        bool inv = (loop<0);
-        loop=abs(loop);
-        for(int a: group[gid]){
-            int act = inv ? inverse(a) : a;
-            REP(_, loop)
-                result.emplace_back(act);
-        }
+    map<int, int> group_count;
+    for(auto&[gid, count]: mapping){
+        group_count[gid]+=count;
+        group_count[gid]%=group_to_rotate_num[gid];
     }
-    // dump(simulation(initial_state, result))
+    dump(group_count)
+    for(auto&[gid, count]: group_count){
+        if(count>group_to_rotate_num[gid]/2)
+            count=group_to_rotate_num[gid]-count;
+    }
+    dump(group_count)
+    map<int, int> size_count;
+    for(auto&[gid, count]: group_count)
+        size_count[group_to_rotate_num[gid]]+=count;
+
+    // TODO: ベスト挿入箇所を探索する
+    dump(size_count)
+    // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI());
+    // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), need_rotate);
+    // 遅い場合がある
+    auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), size_count);
+    while(!add_rotate){
+        for(auto &[size, count]: size_count)
+            count++;
+        dump(size_count)
+        add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), size_count);
+    }
+    dump(add_rotate.value().size())
+    result.insert(result.end(), add_rotate.value().begin(), add_rotate.value().end());
+
+    // NOTE: 回転をそのまま使うと系列が長くなる
+    // // dump(solution_state)
+    // // dump(mapping)
+    // RITR(it, mapping){
+    //     auto&[gid, count] = *it;
+    //     // countは正
+    //     int loop=count>group_to_rotate_num[gid]/2 ? (count-group_to_rotate_num[gid]) : count;
+    //     bool inv = (loop<0);
+    //     loop=abs(loop);
+    //     for(int a: group[gid]){
+    //         int act = inv ? inverse(a) : a;
+    //         REP(_, loop)
+    //             result.emplace_back(act);
+    //     }
+    // }
+    // // dump(simulation(initial_state, result))
     return result;
 }
 
@@ -2156,10 +2179,10 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
     result=summerize_rotate(result);
-    result=summerize_rotate(result);
+    // result=summerize_rotate(result);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
-    // result = greedy_improve(result, depth);
+    result = greedy_improve(result, depth);
     // result = same_state_skip(result);
     // result = loop_compress(result);
 
