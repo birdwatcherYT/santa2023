@@ -821,63 +821,78 @@ optional<pair<VVI,VS>> solve_greed(
         closed_set.emplace(zhash.hash(current_state));
         // closed_set.emplace((current_state));
         // # r0
-        new_state = current_state;
-        // TODO: actionをif内に入れてnew_stateをcurrentに変える
-        action.clear();
-        REP(_, length_list[new_state[0][0]]) action.emplace_back("r0");
         // new_state[0] = new_state[0][1:] + [new_state[0][0]];
         new_state[0].clear();
         new_state[0].insert(new_state[0].end(), current_state[0].begin()+1, current_state[0].end());
         new_state[0].emplace_back(current_state[0][0]);
+        new_state[1] = current_state[1];
         if (!closed_set.contains(zhash.hash(new_state))){
-        // if (!closed_set.contains((new_state))){
-            int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            auto p=path;
-            p.insert(p.end(), action.begin(), action.end());
-            open_set.emplace(priority, new_state, p);
+            // action.clear();
+            // REP(_, length_list[current_state[0][0]]) action.emplace_back("r0");
+            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+            // auto p=path;
+            // p.insert(p.end(), action.begin(), action.end());
+            // open_set.emplace(priority, new_state, p);
+            int addsize=length_list[current_state[0][0]];
+            REP(_, addsize) path.emplace_back("r0");
+            int priority = SZ(path) + heuristic(new_state, goal_state);
+            open_set.emplace(priority, new_state, path);
+            REP(_, addsize) path.pop_back();
         }
 
         // # -r0
-        new_state = current_state;
-        action.clear();
-        REP(_, length_list[new_state[0].back()]) action.emplace_back("-r0");
         // new_state[0] = [new_state[0][-1]] + new_state[0][:-1]
         new_state[0].clear();
         new_state[0].emplace_back(current_state[0].back());
         new_state[0].insert(new_state[0].end(), current_state[0].begin(), current_state[0].begin()+SZ(current_state[0])-1);
+        new_state[1] = current_state[1];
         if (!closed_set.contains(zhash.hash(new_state))){
-        // if (!closed_set.contains((new_state))){
-            int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            auto p=path; p.insert(p.end(), action.begin(), action.end());
-            open_set.emplace(priority, new_state, p);
+            // action.clear();
+            // REP(_, length_list[current_state[0].back()]) action.emplace_back("-r0");
+            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+            // auto p=path; p.insert(p.end(), action.begin(), action.end());
+            // open_set.emplace(priority, new_state, p);
+            int addsize=length_list[current_state[0].back()];
+            REP(_, addsize) path.emplace_back("-r0");
+            int priority = SZ(path) + heuristic(new_state, goal_state);
+            open_set.emplace(priority, new_state, path);
+            REP(_, addsize) path.pop_back();
         }
         // # r1
-        new_state = current_state;
-        action.clear();
-        REP(_, length_list[new_state[1][0]]) action.emplace_back("r1");
         // new_state[1] = new_state[1][1:] + [new_state[1][0]]
+        new_state[0] = current_state[0];
         new_state[1].clear();
         new_state[1].insert(new_state[1].end(), current_state[1].begin()+1, current_state[1].end());
         new_state[1].emplace_back(current_state[1][0]);
         if (!closed_set.contains(zhash.hash(new_state))){
-        // if (!closed_set.contains((new_state))){
-            int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            auto p=path; p.insert(p.end(), action.begin(), action.end());
-            open_set.emplace(priority, new_state, p);
+            // action.clear();
+            // REP(_, length_list[current_state[1][0]]) action.emplace_back("r1");
+            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+            // auto p=path; p.insert(p.end(), action.begin(), action.end());
+            // open_set.emplace(priority, new_state, p);
+            int addsize=length_list[current_state[1][0]];
+            REP(_, addsize) path.emplace_back("r1");
+            int priority = SZ(path) + heuristic(new_state, goal_state);
+            open_set.emplace(priority, new_state, path);
+            REP(_, addsize) path.pop_back();
         }
         // # -r1
-        new_state = current_state;
-        action.clear();
-        REP(_, length_list[new_state[1].back()]) action.emplace_back("-r1");
         // new_state[1] = [new_state[1][-1]] + new_state[1][:-1]
+        new_state[0] = current_state[0];
         new_state[1].clear();
         new_state[1].emplace_back(current_state[1].back());
         new_state[1].insert(new_state[1].end(), current_state[1].begin(), current_state[1].begin()+SZ(current_state[1])-1);
         if (!closed_set.contains(zhash.hash(new_state))){
-        // if (!closed_set.contains((new_state))){
-            int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            auto p=path; p.insert(p.end(), action.begin(), action.end());
-            open_set.emplace(priority, new_state, p);
+            // action.clear();
+            // REP(_, length_list[current_state[1].back()]) action.emplace_back("-r1");
+            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+            // auto p=path; p.insert(p.end(), action.begin(), action.end());
+            // open_set.emplace(priority, new_state, p);
+            int addsize=length_list[current_state[1].back()];
+            REP(_, addsize) path.emplace_back("-r1");
+            int priority = SZ(path) + heuristic(new_state, goal_state);
+            open_set.emplace(priority, new_state, path);
+            REP(_, addsize) path.pop_back();
         }
         // # fn
         int up_total = 0;
@@ -910,13 +925,16 @@ optional<pair<VVI,VS>> solve_greed(
             for(int i=SZ(current_state[0])-1; i>=i_up; --i)
                 new_state[1].emplace_back(current_state[0][i]);
 
-            action.clear();
-            action.emplace_back("f"+to_string(n));
             if (!closed_set.contains(zhash.hash(new_state))){
-            // if (!closed_set.contains((new_state))){
-                int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-                auto p=path; p.insert(p.end(), action.begin(), action.end());
-                open_set.emplace(priority, new_state, p);
+                // action.clear();
+                // action.emplace_back("f"+to_string(n));
+                // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+                // auto p=path; p.insert(p.end(), action.begin(), action.end());
+                // open_set.emplace(priority, new_state, p);
+                path.emplace_back("f"+to_string(n));
+                int priority = SZ(path) + heuristic(new_state, goal_state);
+                open_set.emplace(priority, new_state, path);
+                path.pop_back();
             }
         }
     }
