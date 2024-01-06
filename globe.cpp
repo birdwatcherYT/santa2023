@@ -364,13 +364,19 @@ void data_load(istream &is){
     VS solution_str(state_length);
     is>>initial_str>>solution_str;
     
-    initial_state.assign(state_length, 0);
-    solution_state.assign(state_length, 0);
+    auto labels=initial_str;
+    SORT(labels);
     label_mapping.clear();
-    REP(i, state_length){
-        auto &label=solution_str[i];
+    for(auto& label: labels)
         if(!label_mapping.contains(label))
             label_mapping[label]=SZ(label_mapping);
+
+    initial_state.assign(state_length, 0);
+    solution_state.assign(state_length, 0);
+    REP(i, state_length){
+        auto &label=solution_str[i];
+        // if(!label_mapping.contains(label))
+        //     label_mapping[label]=SZ(label_mapping);
         solution_state[i]=label_mapping[label];
     }
     REP(i, state_length){
@@ -551,7 +557,7 @@ int heuristic_0(const VI &x, const VVI &done_list){
     return res;
 }
 
-int heuristic(const VI &x, const VI &y, VVI &done_list, int base_index = 0, optional<int> add=nullopt){
+int heuristic(const VI &x, const VI &y, const VVI &done_list, int base_index = 0, optional<int> add=nullopt){
     int h0 = heuristic_0(x, done_list);
     int n = SZ(x) / 4;
     if(!add)return h0;
@@ -616,7 +622,7 @@ pair<VI, VS> add_one(
     const VI &initial_state, 
     const VI &goal_state, 
     map<string, VI> &allowed_moves_mod,
-    VVI& done_list, 
+    const VVI& done_list, 
     int base_index = 0, 
     optional<int> add=nullopt,
     int center = -1
@@ -918,13 +924,13 @@ optional<pair<VVI,VS>> solve_greed(
 }
 
 
-optional<pair<VVI,VS>> solve_last(VI &state, VI &goal_state, VVI &done_list){
-    auto &x = state;
+optional<pair<VVI,VS>> solve_last(const VI &state, const VI &goal_state, const VVI &done_list){
+    const auto &x = state;
     int n = SZ(x) / 4;
-    auto &x0 = done_list[0];
-    auto &x1 = done_list[1];
-    auto &x2 = done_list[2];
-    auto &x3 = done_list[3];
+    const auto &x0 = done_list[0];
+    const auto &x1 = done_list[1];
+    const auto &x2 = done_list[2];
+    const auto &x3 = done_list[3];
     int x4 = goal_state[n - 1];
     int x5 = goal_state[2 * n - 1];
     int x6 = goal_state[3 * n - 1];
@@ -1127,6 +1133,7 @@ VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
         }
         // # print(state)
         assert(heuristic_0(state, done_list) == 0);
+        // dump(sol)
         auto result = solve_last(state, goal_state, done_list);
         if (result){
             sol_add = result.value().second;
@@ -1141,10 +1148,10 @@ VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
 
 const string DATA_DIR = "./data/";
 set<string> TARGET{
-    //    "globe_1/8",
+       "globe_1/8",
     //    "globe_1/16",
     //    "globe_2/6",
-       "globe_3/4",
+    //    "globe_3/4",
     //    "globe_6/4",
     //    "globe_6/8",
     //    "globe_6/10",
