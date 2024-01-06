@@ -1099,6 +1099,8 @@ struct RandomWalk{
 
 // 保存した解のチェック
 int check_answer(const string &filename){
+    if(!file_exists(filename))
+        return INF;
     auto actions=load_actions(filename);
     auto result = simulation(initial_state, actions);
     int mistake = get_mistakes(result);
@@ -1974,6 +1976,58 @@ VI kstep_replace(const VI &action, int k, bool sorted){
     return result;
 }
 
+// TODO: メモリ足りないのでハッシュ化必要
+VI kstep_replace(const VI &action, int k){
+    map<VI, VI> to_shortest;
+    VI index(state_length);
+    ARANGE(index);
+    to_shortest[index]=VI();
+    auto prev_step=to_shortest;
+    REP(_, k){
+        map<VI, VI> next_step;
+        for(auto&[state, path]: prev_step){
+            REP(a, allowed_action_num*2){
+                auto s=do_action(state, a);
+                if(to_shortest.contains(s))continue;
+                path.emplace_back(a);
+                next_step.emplace(s, path);
+                to_shortest.emplace(s, path);
+                path.pop_back();
+            }
+        }
+        prev_step=next_step;
+        dump(to_shortest.size())
+    }
+
+    VI result;
+    for(int i=0;i<SZ(action);){
+        // dump(i)
+        auto prev=to_shortest.begin();
+        ARANGE(index);
+        FOR(j, i, SZ(action)){
+            index=do_action(index, action[j]);
+            auto it=to_shortest.find(index);
+            if(it==to_shortest.end()){
+                int length=j-i;
+                if(length>SZ(prev->second)){
+                    OUT("update", length, "->", SZ(prev->second));
+                    result.insert(result.end(), prev->second.begin(), prev->second.end());
+                    i=j;
+                }else{
+                    result.emplace_back(action[i]);
+                    i++;
+                }
+                break;
+            }else if(j==SZ(action)-1){
+                result.insert(result.end(), it->second.begin(), it->second.end());
+                i=SZ(action);
+            }
+            prev=it;
+        }
+    }
+    return result;
+}
+
 optional<VI> rotate_all(const VI& state, int gid, const VI& path, map<int, int> &size_count){
 // optional<VI> rotate_all(const VI& state, int gid, const VI& path, int count){
 // optional<VI> rotate_all(const VI& state, int gid, const VI& path){
@@ -2196,22 +2250,25 @@ VI summerize_rotate(const VI& action, int intercept=0){
 
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
+    if(!file_exists(filename))
+        return INF;
     auto actions=load_actions(filename);
     dump(SZ(actions))
 
     auto result = actions;
     // result = wildcard_finish(result);
     // result = cancel_opposite(result);
+    result = kstep_replace(result, depth);
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
-    result=summerize_rotate(result, 0);
+    // result=summerize_rotate(result, 0);
     // result=summerize_rotate(result, 1);
     // result=summerize_rotate(result, -1);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
     // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
     // result = greedy_improve(result, depth);
-    result = same_state_skip(result);
-    result = loop_compress(result);
+    // result = same_state_skip(result);
+    // result = loop_compress(result);
 
     int mistake = get_mistakes(simulation(initial_state, result));
     assert(mistake<=num_wildcards);
@@ -2403,46 +2460,56 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 //     return INF;
 // }
 
-// optional<VI> rotate_all(const VI& state, int gid, const VI& path){
-//     if(gid>=SZ(group)){
-//         if(get_mistakes(state)<=num_wildcards)
-//             return path;
+// optional<VI> rotate_all(const VI& state, int aid, VI& path, ZobristHashing<uint64_t> &zhash, unordered_set<uint64_t>& hashs){
+//     if(aid>=allowed_action_num){
+//         hashs.emplace(zhash.hash(state));
+//         // if(get_mistakes(state)<=num_wildcards)
+//         //     return path;
 //         return nullopt;
 //     }
-//     auto res=rotate_all(state, gid+1, path);
+//     auto res=rotate_all(state, aid+1, path, zhash, hashs);
 //     if(res)return res.value();
 
-//     auto s=state, p=path;
-//     int rotate=group_to_rotate_num[gid];
-//     int loop=(1+rotate)/2;
-//     int save=size_count[rotate];
+//     int loop=(1+to_rotate_num[aid])/2;
+//     int size=SZ(path);
+//     auto s=state;
 //     REP(i, loop){
-//         size_count[rotate]--;
-//         if(size_count[rotate]<0)
-//             break;
-//         for(int a:group[gid]){
-//             s=do_action(s, a);
-//             p.emplace_back(a);
-//         }
-//         auto res=rotate_all(s, gid+1, p);
+//         s=do_action(s, aid);
+//         path.emplace_back(aid);
+//         auto res=rotate_all(s, aid+1, path, zhash, hashs);
 //         if(res)return res.value();
 //     }
-//     s=state, p=path;
-//     size_count[rotate]=save;
+//     path.resize(size);
+//     s=state;
+//     int ainv=inverse(aid);
 //     REP(i, loop-1){
-//         size_count[rotate]--;
-//         if(size_count[rotate]<0)
-//             break;
-//         for(int a:group[gid]){
-//             s=do_action(s, inverse(a));
-//             p.emplace_back(inverse(a));
-//         }
-//         auto res=rotate_all(s, gid+1, p);
+//         s=do_action(s, ainv);
+//         path.emplace_back(ainv);
+//         auto res=rotate_all(s, aid+1, path, zhash, hashs);
 //         if(res)return res.value();
 //     }
-//     size_count[rotate]=save;
+//     path.resize(size);
 //     return nullopt;
 // }
+// int rotateSolver(const string &filename){
+//     dump(initial_state)
+//     dump(solution_state)
+//     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+//     VI path1, path2;
+//     unordered_set<uint64_t> hashs1, hashs2;
+//     rotate_all(initial_state, 0, path1, zhash, hashs1);
+//     rotate_all(solution_state, 0, path2, zhash, hashs2);
+//     auto hashand=hashs1 & hashs2;
+//     assert(hashand.empty());
+//     // if(res){
+//         // OUT("saved", SZ(res.value()));
+//         // save_actions(filename, res.value());
+//         // return SZ(res.value());
+//     // }
+//     return INF;
+// }
+
+
 
 
 const string DATA_DIR = "./data/";
@@ -2513,6 +2580,7 @@ int main() {
         double score=0;
 
         string output_filename="output/"+to_string(i)+".txt";
+        // string output_filename="globe/"+to_string(i)+".txt";
         // score=ida_solve(output_filename, false);
         // score=ida_solve(output_filename, true);
 
@@ -2526,7 +2594,7 @@ int main() {
         // best_search_step_width(output_filename, 4, 1000);
  
         // score=compression(output_filename, TARGET[puzzle_type]);
-        score=compression(output_filename, TARGET[puzzle_type], 100);
+        // score=compression(output_filename, TARGET[puzzle_type], 100);
         // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
         // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
 
