@@ -1976,23 +1976,25 @@ VI kstep_replace(const VI &action, int k, bool sorted){
     return result;
 }
 
-// TODO: メモリ足りないのでハッシュ化必要
 VI kstep_replace(const VI &action, int k){
-    map<VI, VI> to_shortest;
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, tuple<int, uint64_t, int>> to_shortest;
+
     VI index(state_length);
     ARANGE(index);
-    to_shortest[index]=VI();
+    to_shortest[zhash.hash(index)]={0, 0, -1};
     auto prev_step=to_shortest;
     REP(_, k){
-        map<VI, VI> next_step;
-        for(auto&[state, path]: prev_step){
+        unordered_map<uint64_t, tuple<int, uint64_t, int>> next_step;
+        for(auto&[prev_hash, prev]: prev_step){
+            auto path=construct_actions(0, prev_hash, to_shortest);
+            auto state=simulation(index, path);
             REP(a, allowed_action_num*2){
                 auto s=do_action(state, a);
-                if(to_shortest.contains(s))continue;
-                path.emplace_back(a);
-                next_step.emplace(s, path);
-                to_shortest.emplace(s, path);
-                path.pop_back();
+                auto h=zhash.hash(s);
+                if(to_shortest.contains(h))continue;
+                next_step[h]={get<0>(prev)+1, prev_hash, a};
+                to_shortest[h]={get<0>(prev)+1, prev_hash, a};
             }
         }
         prev_step=next_step;
@@ -2006,12 +2008,13 @@ VI kstep_replace(const VI &action, int k){
         ARANGE(index);
         FOR(j, i, SZ(action)){
             index=do_action(index, action[j]);
-            auto it=to_shortest.find(index);
+            auto it=to_shortest.find(zhash.hash(index));
             if(it==to_shortest.end()){
                 int length=j-i;
-                if(length>SZ(prev->second)){
-                    OUT("update", length, "->", SZ(prev->second));
-                    result.insert(result.end(), prev->second.begin(), prev->second.end());
+                if(length>get<0>(prev->second)){
+                    OUT("update", length, "->", get<0>(prev->second));
+                    auto path=construct_actions(0, prev->first, to_shortest);
+                    result.insert(result.end(), path.begin(), path.end());
                     i=j;
                 }else{
                     result.emplace_back(action[i]);
@@ -2019,7 +2022,8 @@ VI kstep_replace(const VI &action, int k){
                 }
                 break;
             }else if(j==SZ(action)-1){
-                result.insert(result.end(), it->second.begin(), it->second.end());
+                auto path=construct_actions(0, it->first, to_shortest);
+                result.insert(result.end(), path.begin(), path.end());
                 i=SZ(action);
             }
             prev=it;
@@ -2553,18 +2557,8 @@ int main() {
     // for(int i: VI{255000, 256000, 283000}){
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{283000}){
-    // for(int i: VI{259}){
     REP(i, case_num){
     // RREP(i, case_num){
-    // FOR(i,  150, case_num){
-    // FOR(i,  130, 150){
-    // FOR(i, 284, case_num){
-    // FOR(i, 282, 282+1){
-    // FOR(i, 348, case_num){
-    // FOR(i, 353, case_num){
-    // FOR(i, 337, case_num){
-    // FOR(i, 358, case_num){
-    // FOR(i, 332, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
@@ -2594,7 +2588,7 @@ int main() {
         // best_search_step_width(output_filename, 4, 1000);
  
         // score=compression(output_filename, TARGET[puzzle_type]);
-        // score=compression(output_filename, TARGET[puzzle_type], 100);
+        score=compression(output_filename, TARGET[puzzle_type], 100);
         // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
         // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
 
