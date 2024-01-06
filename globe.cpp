@@ -310,11 +310,17 @@ vector<unordered_map<int,int>> allowed_moves_inverse;
 #define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
 #define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
 
+
+
 VI do_action(const VI& state, const VI &action){
     auto s=state;
     REP(i, SZ(state))
         s[i]=state[action[i]];
     return s;
+}
+
+VI product(const VI& perm0, const VI &perm1){
+    return do_action(perm1, perm0);
 }
 
 VI do_action(const VI& state, int action_id){
@@ -480,7 +486,7 @@ int check_answer(const string &filename){
 
 
 // string_upper = "_".join(["."] + x[:2 * n] + x[:2 * n] + ["."]);
-int string_upper_find(VI& x, VI& x0, bool rev=false){
+int string_upper_find(const VI& x, const VI& x0, bool rev=false){
     assert(SZ(x)%4==0);
     int n = SZ(x)/4, len=SZ(x0);
     for(int i=0; i<=4*n-len; ++i){
@@ -493,7 +499,7 @@ int string_upper_find(VI& x, VI& x0, bool rev=false){
 }
 
 // string_lower = "_".join(["."] + x[2 * n:] + x[2 * n:] + ["."]);
-int string_lower_find(VI& x, VI& x0, bool rev=false){
+int string_lower_find(const VI& x, const VI& x0, bool rev=false){
     assert(SZ(x)%4==0);
     int n = SZ(x)/4, len=SZ(x0);
     for(int i=0; i<=4*n-len; ++i){
@@ -505,7 +511,7 @@ int string_lower_find(VI& x, VI& x0, bool rev=false){
     return -1;
 }
 
-int heuristic_0(VI &x, VVI &done_list){
+int heuristic_0(const VI &x, const VVI &done_list){
     int res = 4;
     int n = SZ(x)/4;
     assert(done_list.size()==4);
@@ -545,7 +551,7 @@ int heuristic_0(VI &x, VVI &done_list){
     return res;
 }
 
-int heuristic(VI &x, VI &y, VVI &done_list, int base_index = 0, optional<int> add=nullopt){
+int heuristic(const VI &x, const VI &y, VVI &done_list, int base_index = 0, optional<int> add=nullopt){
     int h0 = heuristic_0(x, done_list);
     int n = SZ(x) / 4;
     if(!add)return h0;
@@ -607,8 +613,8 @@ int heuristic(VI &x, VI &y, VVI &done_list, int base_index = 0, optional<int> ad
 }
 
 pair<VI, VS> add_one(
-    VI &initial_state, 
-    VI &goal_state, 
+    const VI &initial_state, 
+    const VI &goal_state, 
     map<string, VI> &allowed_moves_mod,
     VVI& done_list, 
     int base_index = 0, 
@@ -670,7 +676,7 @@ pair<VI, VS> add_one(
 }
 
 optional<pair<VVI,VS>> solve_greed(
-    VVI &initial_state, VVI &goal_state, 
+    const VVI &initial_state, const VVI &goal_state, 
     optional<VI> length_list_or_null = nullopt,
     int r_0 = 0, int r_1 = 0
 ){
@@ -796,7 +802,7 @@ optional<pair<VVI,VS>> solve_greed(
     unordered_set<uint64_t> closed_set;
     // set<VVI> closed_set;
 
-    auto heuristic=[](VVI&s, VVI&g){
+    auto heuristic=[](const VVI&s, const VVI&g){
         return 0;
     };
 
@@ -1085,9 +1091,8 @@ VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
     allowed_moves_mod["f0"] = perm;
 
     perm.clear();
-    FOR(i, 1, 2 * n){
-        allowed_moves_mod["f"+to_string(i)] = do_action(do_action(do_action(do_action(allowed_moves_mod["-r0"], allowed_moves_mod["-r1"]), allowed_moves_mod["f"+to_string(i - 1)]), allowed_moves_mod["r0"]), allowed_moves_mod["r1"]);
-    }
+    FOR(i, 1, 2 * n)
+        allowed_moves_mod["f"+to_string(i)] = product(product(product(product(allowed_moves_mod["-r0"], allowed_moves_mod["-r1"]), allowed_moves_mod["f"+to_string(i - 1)]), allowed_moves_mod["r0"]), allowed_moves_mod["r1"]);
 
     VS sol;
     // # print(allowed_moves_mod)
@@ -1233,6 +1238,7 @@ int main() {
                 }
             }
         }
+        dump(_sol_all)
         ofstream ofs(output_filename);
         REP(i, SZ(_sol_all)-1)
             ofs<<_sol_all[i]<<".";
