@@ -299,6 +299,51 @@ vector<unordered_map<int,int>> allowed_moves_inverse;
 #define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
 #define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
 
+VI do_action(const VI& state, const unordered_map<int,int> &action){
+    auto s=state;
+    for(auto [i, v]: action)
+        s[i]=state[v];
+    return s;
+}
+
+VI do_action(const VI& state, const VI &action){
+    auto s=state;
+    REP(i, SZ(state))
+        s[i]=state[action[i]];
+    return s;
+}
+
+VI product(const VI& perm0, const VI &perm1){
+    return do_action(perm1, perm0);
+}
+VI product(const VI& perm0, const unordered_map<int,int> &perm1){
+    VI perm1_vec(state_length);
+    REP(i, state_length){
+        auto it1=perm1.find(i);
+        perm1_vec[i]=it1==perm1.end()?i:it1->second;
+    }
+    return do_action(perm1_vec, perm0);
+}
+VI product(const unordered_map<int,int>& perm0, const VI &perm1){
+    return do_action(perm1, perm0);
+}
+
+VI product(const unordered_map<int,int> &perm0, const unordered_map<int,int> &perm1){
+    // VI perm0_vec(state_length);
+    VI perm1_vec(state_length);
+    REP(i, state_length){
+        // auto it0=perm0.find(i);
+        // perm0_vec[i]=it0==perm0.end()?i:it0->second;
+        auto it1=perm1.find(i);
+        perm1_vec[i]=it1==perm1.end()?i:it1->second;
+    }
+    return do_action(perm1_vec, perm0);
+}
+
+VI product(const VI& perm, int a){
+    return product(perm, get_action(a));
+}
+
 VI do_action(const VI& state, int action_id){
     auto s=state;
     const auto &action = get_action(action_id);
@@ -2085,7 +2130,7 @@ optional<VI> rotate_all(const VI& state, int gid, const VI& path, map<int, int> 
     return nullopt;
 }
 
-VI summerize_rotate(const VI& action, int intercept=0){
+map<int, MII> get_group_id_converter(bool inv=false){
     // 前処理
     VI index1(state_length), index2(state_length);
     map<int, MII> group_id_to_converter;
@@ -2097,13 +2142,18 @@ VI summerize_rotate(const VI& action, int intercept=0){
             index1=do_action(index1, a);
         MII converter;
         REP(a1, allowed_action_num*2){
+            // 回転してからa1を適用
             auto tmp1=do_action(index1, a1);
             // 対応する操作を求める
             REP(a2, allowed_action_num*2){
+                // a2を適用してから回転
                 auto tmp2=do_action(index2, a2);
                 for(int a:g)
                     tmp2=do_action(tmp2, a);
                 if(tmp1==tmp2){
+                    if(inv)
+                    converter[a2]=a1;
+                    else
                     converter[a1]=a2;
                     break;
                 }
@@ -2113,6 +2163,12 @@ VI summerize_rotate(const VI& action, int intercept=0){
             group_id_to_converter[gid]=converter;
     }
     // dump(group_id_to_converter)
+    return group_id_to_converter;
+}
+
+VI summerize_rotate(const VI& action, int intercept=0){
+    // 前処理
+    map<int, MII> group_id_to_converter=get_group_id_converter();
 
     VI result;
     VI samegroup(allowed_action_num, 0);
@@ -2251,6 +2307,122 @@ VI summerize_rotate(const VI& action, int intercept=0){
     return result;
 }
 
+void get_all_rotate(const VI& op, int gid, int size, vector<PII>& path, map<uint64_t, tuple<int, vector<PII>, VI>> &rotates, ZobristHashing<uint64_t> &zhash){
+    if(gid>=SZ(group)){
+        auto hash=zhash.hash(op);
+        auto it = rotates.find(hash);
+        if(rotates.end()==it || get<0>(it->second)>size)
+            rotates[hash]={size, path, op};
+        return;
+    }
+    get_all_rotate(op, gid+1, size, path, rotates, zhash);
+
+    auto o=op;
+    REP(i, group_to_rotate_num[gid]-1){
+        for(int a:group[gid])
+            o=do_action(o, a);
+        path.emplace_back(gid, i+1);
+        int add=i+1;
+        if(add>group_to_rotate_num[gid]/2)
+            add=group_to_rotate_num[gid]-add;
+        get_all_rotate(o, gid+1, size+add, path, rotates, zhash);
+        path.pop_back();
+    }
+}
+// 回転して一致する状態までジャンプ wreath以外
+VI rotate_skip(const VI& action){
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+
+    map<uint64_t, tuple<int, vector<PII>, VI>> rotates;
+    {
+        VI index(state_length);
+        ARANGE(index);
+        vector<PII> path;
+        get_all_rotate(index, 0, 0, path, rotates, zhash);
+        dump(rotates.size())
+    }
+
+    map<uint64_t, MII> rotate_to_converter;
+    {
+        VI index1(state_length), index2(state_length);
+        for(auto &[hash,value]: rotates){
+            auto &rop=get<2>(value);
+            ARANGE(index1);
+            ARANGE(index2);
+            index1=do_action(index1, rop);
+            MII converter;
+            REP(a1, allowed_action_num*2){
+                // 回転してからa1を適用
+                auto tmp1=do_action(index1, a1);
+                // 対応する操作を求める
+                REP(a2, allowed_action_num*2){
+                    // a2を適用してから回転
+                    auto tmp2=do_action(index2, a2);
+                    tmp2=do_action(tmp2, rop);
+                    if(tmp1==tmp2){
+                        converter[a1]=a2;
+                        break;
+                    }
+                }
+            }
+            if(SZ(converter)==allowed_action_num*2)
+                rotate_to_converter[hash]=converter;
+        }
+    }
+    unordered_map<uint64_t, int> hash_to_idx;
+    vector<uint64_t> state_hash(SZ(action)+1);
+
+    auto state=initial_state;
+    int idx=0;
+    for(auto &[_,value]: rotates){
+        auto hash=zhash.hash(do_action(state, get<2>(value)));
+        hash_to_idx[hash]=idx;
+        if(get<0>(value)==0)
+            state_hash[idx]=hash;
+    }
+    idx++;
+    for(int a: action){
+        state = do_action(state, a);
+        for(auto &[_,value]: rotates){
+            auto hash=zhash.hash(do_action(state, get<2>(value)));
+            hash_to_idx[hash]=idx;
+            if(get<0>(value)==0)
+                state_hash[idx]=hash;
+        }
+        idx++;
+    }
+    uint64_t mapping=0;
+    VI result;
+    for(idx=0; idx<SZ(action); ){
+        int maxidx=max(idx+1, hash_to_idx[state_hash[idx]]);
+        if(maxidx>idx+1){
+            OUT("improve", maxidx-idx-1);
+            OUT("index", idx, "->", maxidx);
+            state=simulation(initial_state, result);
+            for(auto &[rhash,value]: rotates){
+                auto &rop=get<2>(value);
+                auto hash=zhash.hash(do_action(state, rop));
+                if(state_hash[maxidx]==hash){
+                    mapping=rhash;
+                    break;
+                }
+            }
+        }else
+            result.emplace_back(mapping==0? action[idx] : rotate_to_converter[mapping][action[idx]]);
+        idx=maxidx;
+    }
+    state=simulation(initial_state, result);
+    // dump(solution_state)
+    // dump(state)
+    for(auto &[_,value]: rotates){
+        if(get_mistakes(do_action(state, get<2>(value)))<=num_wildcards){
+            for(auto [gid, cnt]: get<1>(value))REP(_, cnt)for(int a:group[gid])
+                result.emplace_back(a);
+            break;
+        }
+    }
+    return result;
+}
 
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
@@ -2260,12 +2432,13 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     dump(SZ(actions))
 
     auto result = actions;
+    // result=rotate_skip(result);
     // result = wildcard_finish(result);
     // result = cancel_opposite(result);
-    result = kstep_replace(result, depth);
+    // result = kstep_replace(result, depth);
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
-    // result=summerize_rotate(result, 0);
+    result=summerize_rotate(result, 0);
     // result=summerize_rotate(result, 1);
     // result=summerize_rotate(result, -1);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
