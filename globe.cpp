@@ -640,6 +640,9 @@ pair<VI, VS> add_one(
 
     while (!open_set.empty()){
         auto [_, current_state, path] = open_set.top(); open_set.pop();
+        auto hash=zhash.hash(current_state);
+        if(closed_set.contains(hash))
+            continue;
         int h = heuristic(current_state, goal_state, done_list, base_index, add);
         if (h == 0)
             // # print(current_state, path)
@@ -649,7 +652,7 @@ pair<VI, VS> add_one(
         if (current_state == goal_state)
             return {current_state, path};
 
-        closed_set.emplace(zhash.hash(current_state));
+        closed_set.emplace(hash);
         // closed_set.emplace((current_state));
 
         VS action_list;
@@ -814,11 +817,14 @@ optional<pair<VVI,VS>> solve_greed(
 
     while (!open_set.empty()){
         auto [_, current_state, path] = open_set.top(); open_set.pop();
+        auto hash=zhash.hash(current_state);
+        if(closed_set.contains(hash))
+            continue;
 
         if (current_state == goal_state)
             return pair<VVI, VS>{current_state, path};
 
-        closed_set.emplace(zhash.hash(current_state));
+        closed_set.emplace(hash);
         // closed_set.emplace((current_state));
         // # r0
         // new_state[0] = new_state[0][1:] + [new_state[0][0]];
