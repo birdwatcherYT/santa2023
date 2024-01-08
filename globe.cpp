@@ -670,7 +670,7 @@ pair<VI, VS> add_one(
 
     while (!open_set.empty()){
         // auto [_, current_state, path] = open_set.top(); open_set.pop();
-        auto [size, current_hash] = open_set.top(); open_set.pop();
+        auto [_, current_hash] = open_set.top(); open_set.pop();
         // auto hash=zhash.hash(current_state);
         // if(closed_set.contains(hash))
         //     continue;
