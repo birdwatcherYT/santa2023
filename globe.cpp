@@ -619,10 +619,31 @@ int heuristic(const VI &x, const VI &y, const VVI &done_list, int base_index = 0
     // return res;
 }
 
+
+
+VS construct_path(uint64_t last_hash, const unordered_map<uint64_t, tuple<uint64_t, int, string>>& hash_to_size_action){
+    VS actions;
+    auto h=last_hash;
+    while(h!=0){
+        const auto &[next, size, act]=hash_to_size_action.at(h);
+        if(!act.empty())actions.emplace_back(act);
+        h=next;
+    }
+    REVERSE(actions);
+    return actions;
+};
+VI simulate(const VI &state, const VS &path, const map<string, VI> &allowed_moves){
+    auto s=state;
+    for(auto &action: path)
+        s=do_action(s, allowed_moves.at(action));
+    return s;
+};
+
+
 pair<VI, VS> add_one(
     const VI &initial_state, 
     const VI &goal_state, 
-    map<string, VI> &allowed_moves_mod,
+    const map<string, VI> &allowed_moves_mod,
     const VVI& done_list, 
     int base_index = 0, 
     optional<int> add=nullopt,
@@ -634,27 +655,40 @@ pair<VI, VS> add_one(
     assert (SZ(initial_state) == SZ(goal_state));
     ZobristHashing<uint64_t> zhash(1+MAX(initial_state), SZ(initial_state), rand_engine);
 
-    MINPQ<tuple<int, VI, VS>> open_set;
-
-    open_set.emplace(0, initial_state, VS());
-    unordered_set<uint64_t> closed_set;
+    // MINPQ<tuple<int, VI, VS>> open_set;
+    MINPQ<tuple<int,uint64_t>> open_set;
+    // unordered_set<uint64_t> closed_set;
     // set<VI> closed_set;
+    unordered_map<uint64_t, tuple<uint64_t, int, string>> hash_to_size_action;
+
+    auto initial_hash=zhash.hash(initial_state);
+    auto goal_hash=zhash.hash(goal_state);
+
+    // open_set.emplace(0, initial_state, VS());
+    open_set.emplace(0, initial_hash);
+    hash_to_size_action[initial_hash]={0, 0, ""};
 
     while (!open_set.empty()){
-        auto [_, current_state, path] = open_set.top(); open_set.pop();
-        auto hash=zhash.hash(current_state);
-        if(closed_set.contains(hash))
-            continue;
+        // auto [_, current_state, path] = open_set.top(); open_set.pop();
+        auto [size, current_hash] = open_set.top(); open_set.pop();
+        // auto hash=zhash.hash(current_state);
+        // if(closed_set.contains(hash))
+        //     continue;
+
+        auto path=construct_path(current_hash, hash_to_size_action);
+        auto current_state=simulate(initial_state, path, allowed_moves_mod);
+
         int h = heuristic(current_state, goal_state, done_list, base_index, add);
         if (h == 0)
             // # print(current_state, path)
             return {current_state, path};
         // # print(h, current_state)
 
-        if (current_state == goal_state)
+        // if (current_state == goal_state)
+        if (current_hash == goal_hash)
             return {current_state, path};
 
-        closed_set.emplace(hash);
+        // closed_set.emplace(hash);
         // closed_set.emplace((current_state));
 
         VS action_list;
@@ -672,311 +706,334 @@ pair<VI, VS> add_one(
                 action_list.emplace_back("f"+to_string(center));
         }
         for (auto &action :action_list){
-            auto new_state = do_action(current_state, allowed_moves_mod[action]);
+            auto new_state = do_action(current_state, allowed_moves_mod.at(action));
             auto new_hash = zhash.hash(new_state);
-            if (!closed_set.contains(new_hash)){
+
+            auto it = hash_to_size_action.find(new_hash);
+            if(it==hash_to_size_action.end())
+                hash_to_size_action[new_hash]={current_hash, SZ(path)+1, action};
+            else if(get<1>(it->second)>SZ(path)+1)
+                it->second={current_hash, SZ(path)+1, action};
+            else
+                continue;
+            // if (!closed_set.contains(new_hash)){
             // if (!closed_set.contains(new_state)){
                 int h_new = heuristic(new_state, goal_state, done_list, base_index, add);
                 int priority = SZ(path) + 1 + h_new;
-                path.emplace_back(action);
-                open_set.emplace(priority, new_state, path);
-                path.pop_back();
-            }
+                // path.emplace_back(action);
+                // open_set.emplace(priority, new_state, path);
+                // path.pop_back();
+                open_set.emplace(priority, new_hash);
+            // }
         }
     }
     return pair<VI,VS>();
 }
 
-optional<pair<VVI,VS>> solve_greed(
-    const VVI &initial_state, const VVI &goal_state, 
-    optional<VI> length_list_or_null = nullopt,
-    int r_0 = 0, int r_1 = 0
-){
-    assert (SZ(initial_state) ==2 && SZ(goal_state) == 2);
-    // assert (list(sorted(initial_state[0] + initial_state[1])) == list(sorted(goal_state[0] + goal_state[1])));
-    if(DEBUG){
-        VI init=initial_state[0];
-        init.insert(init.end(), initial_state[1].begin(), initial_state[1].end());
-        SORT(init);
+// optional<pair<VVI,VS>> solve_greed(
+//     const VVI &initial_state, const VVI &goal_state, 
+//     optional<VI> length_list_or_null = nullopt,
+//     int r_0 = 0, int r_1 = 0
+// ){
+//     assert (SZ(initial_state) ==2 && SZ(goal_state) == 2);
+//     // assert (list(sorted(initial_state[0] + initial_state[1])) == list(sorted(goal_state[0] + goal_state[1])));
+//     if(DEBUG){
+//         VI init=initial_state[0];
+//         init.insert(init.end(), initial_state[1].begin(), initial_state[1].end());
+//         SORT(init);
 
-        VI goal=goal_state[0];
-        goal.insert(goal.end(), goal_state[1].begin(), goal_state[1].end());
-        SORT(goal);
+//         VI goal=goal_state[0];
+//         goal.insert(goal.end(), goal_state[1].begin(), goal_state[1].end());
+//         SORT(goal);
         
-        assert(init==goal);
-    }
-    VI length_list;
-    if (!length_list_or_null){
-        // length_list = [1] * (max(initial_state[0] + initial_state[1]) + 1);
-        length_list.assign(max(MAX(initial_state[0]), MAX(initial_state[1])) + 1, 1);
-    }else
-        length_list=length_list_or_null.value();
-    // assert sum([length_list[p] for p in initial_state[0]]) == sum([length_list[p] for p in initial_state[1]])
-    if(DEBUG){
-        int s0=0;
-        for(int p : initial_state[0])s0+=length_list[p];
-        int s1=0;
-        for(int p : initial_state[1])s1+=length_list[p];
-        assert(s0==s1);
-    }
-    // assert sum([length_list[p] for p in goal_state[0]]) == sum([length_list[p] for p in goal_state[1]])
-    if(DEBUG){
-        int s0=0;
-        for(int p : goal_state[0])s0+=length_list[p];
-        int s1=0;
-        for(int p : goal_state[1])s1+=length_list[p];
-        assert(s0==s1);
-    }
-    // assert sum([length_list[p] for p in initial_state[0]]) == sum([length_list[p] for p in goal_state[0]])
-    if(DEBUG){
-        int s0=0;
-        for(int p : initial_state[0])s0+=length_list[p];
-        int s1=0;
-        for(int p : goal_state[0])s1+=length_list[p];
-        assert(s0==s1);
-    }
+//         assert(init==goal);
+//     }
+//     VI length_list;
+//     if (!length_list_or_null){
+//         // length_list = [1] * (max(initial_state[0] + initial_state[1]) + 1);
+//         length_list.assign(max(MAX(initial_state[0]), MAX(initial_state[1])) + 1, 1);
+//     }else
+//         length_list=length_list_or_null.value();
+//     // assert sum([length_list[p] for p in initial_state[0]]) == sum([length_list[p] for p in initial_state[1]])
+//     if(DEBUG){
+//         int s0=0;
+//         for(int p : initial_state[0])s0+=length_list[p];
+//         int s1=0;
+//         for(int p : initial_state[1])s1+=length_list[p];
+//         assert(s0==s1);
+//     }
+//     // assert sum([length_list[p] for p in goal_state[0]]) == sum([length_list[p] for p in goal_state[1]])
+//     if(DEBUG){
+//         int s0=0;
+//         for(int p : goal_state[0])s0+=length_list[p];
+//         int s1=0;
+//         for(int p : goal_state[1])s1+=length_list[p];
+//         assert(s0==s1);
+//     }
+//     // assert sum([length_list[p] for p in initial_state[0]]) == sum([length_list[p] for p in goal_state[0]])
+//     if(DEBUG){
+//         int s0=0;
+//         for(int p : initial_state[0])s0+=length_list[p];
+//         int s1=0;
+//         for(int p : goal_state[0])s1+=length_list[p];
+//         assert(s0==s1);
+//     }
 
-    int n = 0;
-    for(int p: initial_state[0])
-        n+=length_list[p];
-    assert(n%2==0);
-    n/=2;
+//     int n = 0;
+//     for(int p: initial_state[0])
+//         n+=length_list[p];
+//     assert(n%2==0);
+//     n/=2;
 
-    MINPQ<tuple<int,VVI,VS>> open_set;
-    int c_0 = length_list[initial_state[0].back()];
-    int c_1 = length_list[initial_state[1].back()];
-    // # right-right
-    VS action;
-    REP(i,r_0)action.emplace_back("r0");
-    REP(i,r_1)action.emplace_back("r1");
-    open_set.emplace(r_0 + r_1, initial_state, action);
+//     MINPQ<tuple<int,VVI,VS>> open_set;
+//     int c_0 = length_list[initial_state[0].back()];
+//     int c_1 = length_list[initial_state[1].back()];
+//     // # right-right
+//     VS action;
+//     REP(i,r_0)action.emplace_back("r0");
+//     REP(i,r_1)action.emplace_back("r1");
+//     open_set.emplace(r_0 + r_1, initial_state, action);
 
-    // # left-right
-    VVI new_state(2, VI());
-    new_state[0].emplace_back(initial_state[0].back());
-    new_state[0].insert(new_state[0].end(), initial_state[0].begin(), initial_state[0].begin()+SZ(initial_state[0])-1);
-    new_state[1]=initial_state[1];
-    action.clear();
-    if (c_0 > r_0){
-        REP(i,c_0 - r_0)action.emplace_back("-r0");
-        REP(i,r_1)action.emplace_back("r1");
-        open_set.emplace((c_0 - r_0) + r_1, new_state, action);
-    }else{
-        REP(i,r_0 - c_0)action.emplace_back("r0");
-        REP(i,r_1)action.emplace_back("r1");
-        open_set.emplace((r_0 - c_0) + r_1, new_state, action);
-    }
+//     // # left-right
+//     VVI new_state(2, VI());
+//     new_state[0].emplace_back(initial_state[0].back());
+//     new_state[0].insert(new_state[0].end(), initial_state[0].begin(), initial_state[0].begin()+SZ(initial_state[0])-1);
+//     new_state[1]=initial_state[1];
+//     action.clear();
+//     if (c_0 > r_0){
+//         REP(i,c_0 - r_0)action.emplace_back("-r0");
+//         REP(i,r_1)action.emplace_back("r1");
+//         open_set.emplace((c_0 - r_0) + r_1, new_state, action);
+//     }else{
+//         REP(i,r_0 - c_0)action.emplace_back("r0");
+//         REP(i,r_1)action.emplace_back("r1");
+//         open_set.emplace((r_0 - c_0) + r_1, new_state, action);
+//     }
 
-    // # right-left
-    new_state[0]=initial_state[0];
-    new_state[1].clear();
-    new_state[1].emplace_back(initial_state[1].back());
-    new_state[1].insert(new_state[1].end(), initial_state[1].begin(), initial_state[1].begin()+SZ(initial_state[1])-1);
-    action.clear();
-    if (c_1 > r_1){
-        REP(i,c_1 - r_1)action.emplace_back("-r1");
-        REP(i,r_0)action.emplace_back("r0");
-        open_set.emplace((c_1 - r_1) + r_0, new_state, action);
-    }else{
-        REP(i,r_1 - c_1)action.emplace_back("r1");
-        REP(i,r_0)action.emplace_back("r0");
-        open_set.emplace((r_1 - c_1) + r_0, new_state, action);
-    }
-    // # left-left
-    new_state[0].clear();
-    new_state[0].emplace_back(initial_state[0].back());
-    new_state[0].insert(new_state[0].end(), initial_state[0].begin(), initial_state[0].begin()+SZ(initial_state[0])-1);
-    new_state[1].clear();
-    new_state[1].emplace_back(initial_state[1].back());
-    new_state[1].insert(new_state[1].end(), initial_state[1].begin(), initial_state[1].begin()+SZ(initial_state[1])-1);
-    action.clear();
-    if (c_0 > r_0){
-        REP(i,c_0 - r_0)action.emplace_back("-r0");
-        if (c_1 > r_1){
-            REP(i,c_1 - r_1)action.emplace_back("-r1");
-            open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
-        }else{
-            REP(i,r_1 - c_1)action.emplace_back("r1");
-            open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
-        }
-    }else{
-        REP(i,r_0 - c_0)action.emplace_back("r0");
-        if (c_1 > r_1){
-            REP(i,c_1 - r_1)action.emplace_back("-r1");
-            open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
-        }else{
-            REP(i,r_1 - c_1)action.emplace_back("r1");
-            open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
-        }
-    }
+//     // # right-left
+//     new_state[0]=initial_state[0];
+//     new_state[1].clear();
+//     new_state[1].emplace_back(initial_state[1].back());
+//     new_state[1].insert(new_state[1].end(), initial_state[1].begin(), initial_state[1].begin()+SZ(initial_state[1])-1);
+//     action.clear();
+//     if (c_1 > r_1){
+//         REP(i,c_1 - r_1)action.emplace_back("-r1");
+//         REP(i,r_0)action.emplace_back("r0");
+//         open_set.emplace((c_1 - r_1) + r_0, new_state, action);
+//     }else{
+//         REP(i,r_1 - c_1)action.emplace_back("r1");
+//         REP(i,r_0)action.emplace_back("r0");
+//         open_set.emplace((r_1 - c_1) + r_0, new_state, action);
+//     }
+//     // # left-left
+//     new_state[0].clear();
+//     new_state[0].emplace_back(initial_state[0].back());
+//     new_state[0].insert(new_state[0].end(), initial_state[0].begin(), initial_state[0].begin()+SZ(initial_state[0])-1);
+//     new_state[1].clear();
+//     new_state[1].emplace_back(initial_state[1].back());
+//     new_state[1].insert(new_state[1].end(), initial_state[1].begin(), initial_state[1].begin()+SZ(initial_state[1])-1);
+//     action.clear();
+//     if (c_0 > r_0){
+//         REP(i,c_0 - r_0)action.emplace_back("-r0");
+//         if (c_1 > r_1){
+//             REP(i,c_1 - r_1)action.emplace_back("-r1");
+//             open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
+//         }else{
+//             REP(i,r_1 - c_1)action.emplace_back("r1");
+//             open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
+//         }
+//     }else{
+//         REP(i,r_0 - c_0)action.emplace_back("r0");
+//         if (c_1 > r_1){
+//             REP(i,c_1 - r_1)action.emplace_back("-r1");
+//             open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
+//         }else{
+//             REP(i,r_1 - c_1)action.emplace_back("r1");
+//             open_set.emplace(abs(c_0 - r_0) + abs(c_1 - r_1), new_state, action);
+//         }
+//     }
     
-    ZobristHashing<uint64_t> zhash(1+max(MAX(initial_state[0]), MAX(initial_state[1])), SZ(initial_state[0])+SZ(initial_state[1]), rand_engine);
-    unordered_set<uint64_t> closed_set;
-    // set<VVI> closed_set;
+//     ZobristHashing<uint64_t> zhash(1+max(MAX(initial_state[0]), MAX(initial_state[1])), SZ(initial_state[0])+SZ(initial_state[1]), rand_engine);
+//     unordered_set<uint64_t> closed_set;
+//     // set<VVI> closed_set;
 
-    auto heuristic=[](const VVI&s, const VVI&g){
-        return 0;
-    };
+//     auto heuristic=[](const VVI&s, const VVI&g){
+//         return 0;
+//     };
 
-    while (!open_set.empty()){
-        auto [_, current_state, path] = open_set.top(); open_set.pop();
-        auto hash=zhash.hash(current_state);
-        if(closed_set.contains(hash))
-            continue;
+//     while (!open_set.empty()){
+//         auto [_, current_state, path] = open_set.top(); open_set.pop();
+//         auto hash=zhash.hash(current_state);
+//         if(closed_set.contains(hash))
+//             continue;
 
-        if (current_state == goal_state)
-            return pair<VVI, VS>{current_state, path};
+//         if (current_state == goal_state)
+//             return pair<VVI, VS>{current_state, path};
 
-        closed_set.emplace(hash);
-        // closed_set.emplace((current_state));
-        // # r0
-        // new_state[0] = new_state[0][1:] + [new_state[0][0]];
-        new_state[0].clear();
-        new_state[0].insert(new_state[0].end(), current_state[0].begin()+1, current_state[0].end());
-        new_state[0].emplace_back(current_state[0][0]);
-        new_state[1] = current_state[1];
-        if (!closed_set.contains(zhash.hash(new_state))){
-            // action.clear();
-            // REP(_, length_list[current_state[0][0]]) action.emplace_back("r0");
-            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            // auto p=path;
-            // p.insert(p.end(), action.begin(), action.end());
-            // open_set.emplace(priority, new_state, p);
-            int addsize=length_list[current_state[0][0]];
-            REP(_, addsize) path.emplace_back("r0");
-            int priority = SZ(path) + heuristic(new_state, goal_state);
-            open_set.emplace(priority, new_state, path);
-            REP(_, addsize) path.pop_back();
-        }
+//         closed_set.emplace(hash);
+//         // closed_set.emplace((current_state));
+//         // # r0
+//         // new_state[0] = new_state[0][1:] + [new_state[0][0]];
+//         new_state[0].clear();
+//         new_state[0].insert(new_state[0].end(), current_state[0].begin()+1, current_state[0].end());
+//         new_state[0].emplace_back(current_state[0][0]);
+//         new_state[1] = current_state[1];
+//         if (!closed_set.contains(zhash.hash(new_state))){
+//             // action.clear();
+//             // REP(_, length_list[current_state[0][0]]) action.emplace_back("r0");
+//             // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+//             // auto p=path;
+//             // p.insert(p.end(), action.begin(), action.end());
+//             // open_set.emplace(priority, new_state, p);
+//             int addsize=length_list[current_state[0][0]];
+//             REP(_, addsize) path.emplace_back("r0");
+//             int priority = SZ(path) + heuristic(new_state, goal_state);
+//             open_set.emplace(priority, new_state, path);
+//             REP(_, addsize) path.pop_back();
+//         }
 
-        // # -r0
-        // new_state[0] = [new_state[0][-1]] + new_state[0][:-1]
-        new_state[0].clear();
-        new_state[0].emplace_back(current_state[0].back());
-        new_state[0].insert(new_state[0].end(), current_state[0].begin(), current_state[0].begin()+SZ(current_state[0])-1);
-        new_state[1] = current_state[1];
-        if (!closed_set.contains(zhash.hash(new_state))){
-            // action.clear();
-            // REP(_, length_list[current_state[0].back()]) action.emplace_back("-r0");
-            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            // auto p=path; p.insert(p.end(), action.begin(), action.end());
-            // open_set.emplace(priority, new_state, p);
-            int addsize=length_list[current_state[0].back()];
-            REP(_, addsize) path.emplace_back("-r0");
-            int priority = SZ(path) + heuristic(new_state, goal_state);
-            open_set.emplace(priority, new_state, path);
-            REP(_, addsize) path.pop_back();
-        }
-        // # r1
-        // new_state[1] = new_state[1][1:] + [new_state[1][0]]
-        new_state[0] = current_state[0];
-        new_state[1].clear();
-        new_state[1].insert(new_state[1].end(), current_state[1].begin()+1, current_state[1].end());
-        new_state[1].emplace_back(current_state[1][0]);
-        if (!closed_set.contains(zhash.hash(new_state))){
-            // action.clear();
-            // REP(_, length_list[current_state[1][0]]) action.emplace_back("r1");
-            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            // auto p=path; p.insert(p.end(), action.begin(), action.end());
-            // open_set.emplace(priority, new_state, p);
-            int addsize=length_list[current_state[1][0]];
-            REP(_, addsize) path.emplace_back("r1");
-            int priority = SZ(path) + heuristic(new_state, goal_state);
-            open_set.emplace(priority, new_state, path);
-            REP(_, addsize) path.pop_back();
-        }
-        // # -r1
-        // new_state[1] = [new_state[1][-1]] + new_state[1][:-1]
-        new_state[0] = current_state[0];
-        new_state[1].clear();
-        new_state[1].emplace_back(current_state[1].back());
-        new_state[1].insert(new_state[1].end(), current_state[1].begin(), current_state[1].begin()+SZ(current_state[1])-1);
-        if (!closed_set.contains(zhash.hash(new_state))){
-            // action.clear();
-            // REP(_, length_list[current_state[1].back()]) action.emplace_back("-r1");
-            // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-            // auto p=path; p.insert(p.end(), action.begin(), action.end());
-            // open_set.emplace(priority, new_state, p);
-            int addsize=length_list[current_state[1].back()];
-            REP(_, addsize) path.emplace_back("-r1");
-            int priority = SZ(path) + heuristic(new_state, goal_state);
-            open_set.emplace(priority, new_state, path);
-            REP(_, addsize) path.pop_back();
-        }
-        // # fn
-        int up_total = 0;
-        int i_up = -1;
-        REP(i, SZ(current_state[0])){
-            int a=current_state[0][i];
-            up_total += length_list[a];
-            if (up_total == n)
-                i_up = i + 1;
-        }
-        int down_total = 0;
-        int i_down = -1;
-        REP(i, SZ(current_state[1])){
-            int a=current_state[1][i];
-            down_total += length_list[a];
-            if (down_total == n)
-                i_down = i + 1;
-        }
-        if (i_up > 0 && i_down > 0){
-            // new_state = [
-            //     current_state[0][:i_up] + list(reversed(current_state[1][i_down:])),
-            //     current_state[1][:i_down] + list(reversed(current_state[0][i_up:]))
-            // ];
-            new_state[0].clear();
-            new_state[0].insert(new_state[0].end(), current_state[0].begin(), current_state[0].begin()+i_up);
-            for(int i=SZ(current_state[1])-1; i>=i_down; --i)
-                new_state[0].emplace_back(current_state[1][i]);
-            new_state[1].clear();
-            new_state[1].insert(new_state[1].end(), current_state[1].begin(), current_state[1].begin()+i_down);
-            for(int i=SZ(current_state[0])-1; i>=i_up; --i)
-                new_state[1].emplace_back(current_state[0][i]);
+//         // # -r0
+//         // new_state[0] = [new_state[0][-1]] + new_state[0][:-1]
+//         new_state[0].clear();
+//         new_state[0].emplace_back(current_state[0].back());
+//         new_state[0].insert(new_state[0].end(), current_state[0].begin(), current_state[0].begin()+SZ(current_state[0])-1);
+//         new_state[1] = current_state[1];
+//         if (!closed_set.contains(zhash.hash(new_state))){
+//             // action.clear();
+//             // REP(_, length_list[current_state[0].back()]) action.emplace_back("-r0");
+//             // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+//             // auto p=path; p.insert(p.end(), action.begin(), action.end());
+//             // open_set.emplace(priority, new_state, p);
+//             int addsize=length_list[current_state[0].back()];
+//             REP(_, addsize) path.emplace_back("-r0");
+//             int priority = SZ(path) + heuristic(new_state, goal_state);
+//             open_set.emplace(priority, new_state, path);
+//             REP(_, addsize) path.pop_back();
+//         }
+//         // # r1
+//         // new_state[1] = new_state[1][1:] + [new_state[1][0]]
+//         new_state[0] = current_state[0];
+//         new_state[1].clear();
+//         new_state[1].insert(new_state[1].end(), current_state[1].begin()+1, current_state[1].end());
+//         new_state[1].emplace_back(current_state[1][0]);
+//         if (!closed_set.contains(zhash.hash(new_state))){
+//             // action.clear();
+//             // REP(_, length_list[current_state[1][0]]) action.emplace_back("r1");
+//             // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+//             // auto p=path; p.insert(p.end(), action.begin(), action.end());
+//             // open_set.emplace(priority, new_state, p);
+//             int addsize=length_list[current_state[1][0]];
+//             REP(_, addsize) path.emplace_back("r1");
+//             int priority = SZ(path) + heuristic(new_state, goal_state);
+//             open_set.emplace(priority, new_state, path);
+//             REP(_, addsize) path.pop_back();
+//         }
+//         // # -r1
+//         // new_state[1] = [new_state[1][-1]] + new_state[1][:-1]
+//         new_state[0] = current_state[0];
+//         new_state[1].clear();
+//         new_state[1].emplace_back(current_state[1].back());
+//         new_state[1].insert(new_state[1].end(), current_state[1].begin(), current_state[1].begin()+SZ(current_state[1])-1);
+//         if (!closed_set.contains(zhash.hash(new_state))){
+//             // action.clear();
+//             // REP(_, length_list[current_state[1].back()]) action.emplace_back("-r1");
+//             // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+//             // auto p=path; p.insert(p.end(), action.begin(), action.end());
+//             // open_set.emplace(priority, new_state, p);
+//             int addsize=length_list[current_state[1].back()];
+//             REP(_, addsize) path.emplace_back("-r1");
+//             int priority = SZ(path) + heuristic(new_state, goal_state);
+//             open_set.emplace(priority, new_state, path);
+//             REP(_, addsize) path.pop_back();
+//         }
+//         // # fn
+//         int up_total = 0;
+//         int i_up = -1;
+//         REP(i, SZ(current_state[0])){
+//             int a=current_state[0][i];
+//             up_total += length_list[a];
+//             if (up_total == n)
+//                 i_up = i + 1;
+//         }
+//         int down_total = 0;
+//         int i_down = -1;
+//         REP(i, SZ(current_state[1])){
+//             int a=current_state[1][i];
+//             down_total += length_list[a];
+//             if (down_total == n)
+//                 i_down = i + 1;
+//         }
+//         if (i_up > 0 && i_down > 0){
+//             // new_state = [
+//             //     current_state[0][:i_up] + list(reversed(current_state[1][i_down:])),
+//             //     current_state[1][:i_down] + list(reversed(current_state[0][i_up:]))
+//             // ];
+//             new_state[0].clear();
+//             new_state[0].insert(new_state[0].end(), current_state[0].begin(), current_state[0].begin()+i_up);
+//             for(int i=SZ(current_state[1])-1; i>=i_down; --i)
+//                 new_state[0].emplace_back(current_state[1][i]);
+//             new_state[1].clear();
+//             new_state[1].insert(new_state[1].end(), current_state[1].begin(), current_state[1].begin()+i_down);
+//             for(int i=SZ(current_state[0])-1; i>=i_up; --i)
+//                 new_state[1].emplace_back(current_state[0][i]);
 
-            if (!closed_set.contains(zhash.hash(new_state))){
-                // action.clear();
-                // action.emplace_back("f"+to_string(n));
-                // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
-                // auto p=path; p.insert(p.end(), action.begin(), action.end());
-                // open_set.emplace(priority, new_state, p);
-                path.emplace_back("f"+to_string(n));
-                int priority = SZ(path) + heuristic(new_state, goal_state);
-                open_set.emplace(priority, new_state, path);
-                path.pop_back();
-            }
-        }
-    }
-    return nullopt;
-}
+//             if (!closed_set.contains(zhash.hash(new_state))){
+//                 // action.clear();
+//                 // action.emplace_back("f"+to_string(n));
+//                 // int priority = SZ(path) + SZ(action) + heuristic(new_state, goal_state);
+//                 // auto p=path; p.insert(p.end(), action.begin(), action.end());
+//                 // open_set.emplace(priority, new_state, p);
+//                 path.emplace_back("f"+to_string(n));
+//                 int priority = SZ(path) + heuristic(new_state, goal_state);
+//                 open_set.emplace(priority, new_state, path);
+//                 path.pop_back();
+//             }
+//         }
+//     }
+//     return nullopt;
+// }
 
 
 optional<pair<VI,VS>> solve_last_greed(
     const VI &initial_state, 
     const VI &goal_state, 
-    map<string, VI> &allowed_moves,
+    const map<string, VI> &allowed_moves,
     const VVI &done_list,
     const VI &center_list
 ){
     // int n = SZ(initial_state) / 4;
     assert (SZ(initial_state) % 4 == 0);
     assert (SZ(initial_state) == SZ(goal_state));
-    MINPQ<tuple<int,VI,VS>> open_set;
 
-    open_set.emplace(0, initial_state, VS());
     ZobristHashing<uint64_t> zhash(1+MAX(initial_state), SZ(initial_state), rand_engine);
-    unordered_set<uint64_t> closed_set;
+    // MINPQ<tuple<int,VI,VS>> open_set;
+    MINPQ<tuple<int,uint64_t>> open_set;
+    // unordered_set<uint64_t> closed_set;
+    // state hash -> prev_hash, depth, action
+    unordered_map<uint64_t, tuple<uint64_t, int, string>> hash_to_size_action;
+
+    auto initial_hash=zhash.hash(initial_state);
+    auto goal_hash=zhash.hash(goal_state);
+    // open_set.emplace(0, initial_state, VS());
+    open_set.emplace(0, initial_hash);
+    hash_to_size_action[initial_hash]={0, 0, ""};
 
     while (!open_set.empty()){
-        auto [_, current_state, path] = open_set.top(); open_set.pop();
-        auto hash=zhash.hash(current_state);
-        if(closed_set.contains(hash))
-            continue;
+        // auto [_, current_state, path] = open_set.top(); open_set.pop();
+        auto [_, current_hash] = open_set.top(); open_set.pop();
+        // auto hash=zhash.hash(current_state);
+        // if(closed_set.contains(current_hash))
+        //     continue;
 
-        if (current_state == goal_state)
+        auto path=construct_path(current_hash, hash_to_size_action);
+        auto current_state=simulate(initial_state, path, allowed_moves);
+        // if (current_state == goal_state)
+        //     return pair<VI, VS>{current_state, path};
+        if (current_hash == goal_hash)
             return pair<VI, VS>{current_state, path};
 
-        closed_set.emplace(hash);
+        // closed_set.emplace(hash);
+        // closed_set.emplace(current_hash);
 
         VS action_list;
         if (center_list.empty()){
@@ -993,169 +1050,178 @@ optional<pair<VI,VS>> solve_last_greed(
                 action_list.emplace_back("f"+to_string(center));
         }
         for (auto &action : action_list){
-            auto new_state = do_action(current_state, allowed_moves[action]);
+            auto new_state = do_action(current_state, allowed_moves.at(action));
             auto new_hash = zhash.hash(new_state);
-            if (!closed_set.contains(new_hash)){
+
+            auto it = hash_to_size_action.find(new_hash);
+            if(it==hash_to_size_action.end())
+                hash_to_size_action[new_hash]={current_hash, SZ(path)+1, action};
+            else if(get<1>(it->second)>SZ(path)+1)
+                it->second={current_hash, SZ(path)+1, action};
+            else
+                continue;
+            // if (!closed_set.contains(new_hash)){
             // if (!closed_set.contains(new_state)){
                 int h_new = heuristic_0(new_state, done_list);
                 if (h_new == 0){
                     int priority = SZ(path) + 1 + h_new;
-                    path.emplace_back(action);
-                    open_set.emplace(priority, new_state, path);
-                    path.pop_back();
+                    // path.emplace_back(action);
+                    // open_set.emplace(priority, new_state, path);
+                    // path.pop_back();
+                    open_set.emplace(priority, new_hash);
                 }
-            }
+            // }
         }
     }
     return nullopt;
 }
 
-optional<pair<VVI,VS>> solve_last(const VI &state, const VI &goal_state, const VVI &done_list){
-    const auto &x = state;
-    int n = SZ(x) / 4;
-    const auto &x0 = done_list[0];
-    const auto &x1 = done_list[1];
-    const auto &x2 = done_list[2];
-    const auto &x3 = done_list[3];
-    int x4 = goal_state[n - 1];
-    int x5 = goal_state[2 * n - 1];
-    int x6 = goal_state[3 * n - 1];
-    int x7 = goal_state[4 * n - 2];
-    // # print(x)
-    // # print(done_list)
-    // # print(x4, x5, x6, x7)
+// optional<pair<VVI,VS>> solve_last(const VI &state, const VI &goal_state, const VVI &done_list){
+//     const auto &x = state;
+//     int n = SZ(x) / 4;
+//     const auto &x0 = done_list[0];
+//     const auto &x1 = done_list[1];
+//     const auto &x2 = done_list[2];
+//     const auto &x3 = done_list[3];
+//     int x4 = goal_state[n - 1];
+//     int x5 = goal_state[2 * n - 1];
+//     int x6 = goal_state[3 * n - 1];
+//     int x7 = goal_state[4 * n - 2];
+//     // # print(x)
+//     // # print(done_list)
+//     // # print(x4, x5, x6, x7)
 
-    VI res_up(2 * n, -1);
-    VI res_down(2 * n, -1);
-    int s_up = string_upper_find(x, x0);
-    if (s_up >= 0){
-        int st = s_up;
-        FOR(i, st, st + SZ(done_list[0]))
-            res_up[i % (2 * n)] = 0;
-    }else{
-        int s_down = string_lower_find(x, x0, true);
-        int st = s_down;
-        FOR(i, st, st + SZ(done_list[0]))
-            res_down[i % (2 * n)] = 0;
-    }
-    s_up = string_upper_find(x, x1);
-    if (s_up >= 0){
-        int st = s_up;
-        FOR(i, st, st + SZ(done_list[1]))
-            res_up[i % (2 * n)] = 1;
-    }else{
-        int s_down = string_lower_find(x, x1, true);
-        int st = s_down;
-        FOR(i, st, st + SZ(done_list[1]))
-            res_down[i % (2 * n)] = 1;
-    }
-    s_up = string_upper_find(x, x2, true);
-    if (s_up >= 0){
-        int st = s_up;
-        FOR(i, st, st + SZ(done_list[2]))
-            res_up[i % (2 * n)] = 2;
-    }else{
-        int s_down = string_lower_find(x, x2);
-        int st = s_down;
-        FOR(i, st, st + SZ(done_list[2]))
-            res_down[i % (2 * n)] = 2;
-    }
-    s_up = string_upper_find(x, x3, true);
-    if (s_up >= 0){
-        int st = s_up;
-        FOR(i, st, st + SZ(done_list[3]))
-            res_up[i % (2 * n)] = 3;
-    }else{
-        int s_down = string_lower_find(x, x3);
-        int st = s_down;
-        FOR(i, st, st + SZ(done_list[3]))
-            res_down[i % (2 * n)] = 3;
-    }
-    REP(i, 2 * n){
-        if (res_up[i] == -1){
-            if (state[i] == x4)
-                res_up[i] = 4;
-            else if (state[i] == x5)
-                res_up[i] = 5;
-            else if (state[i] == x6)
-                res_up[i] = 6;
-            else if (state[i] == x7)
-                res_up[i] = 7;
-            else
-                res_up[i] = 8;
-        }
-        if (res_down[i] == -1){
-            if (state[i + 2 * n] == x4)
-                res_down[i] = 4;
-            else if (state[i + 2 * n] == x5)
-                res_down[i] = 5;
-            else if (state[i + 2 * n] == x6)
-                res_down[i] = 6;
-            else if (state[i + 2 * n] == x7)
-                res_down[i] = 7;
-            else
-                res_down[i] = 8;
-        }
-    }
-    // # print(res_up)
-    // # print(res_down)
-    VI length_list(max(MAX(res_up), MAX(res_down)) + 1, 0);
-    for (int c: res_up)
-        length_list[c] += 1;
-    for (int c : res_down)
-        length_list[c] += 1;
-    FOR(i, 4, SZ(length_list))
-        length_list[i] = 1;
+//     VI res_up(2 * n, -1);
+//     VI res_down(2 * n, -1);
+//     int s_up = string_upper_find(x, x0);
+//     if (s_up >= 0){
+//         int st = s_up;
+//         FOR(i, st, st + SZ(done_list[0]))
+//             res_up[i % (2 * n)] = 0;
+//     }else{
+//         int s_down = string_lower_find(x, x0, true);
+//         int st = s_down;
+//         FOR(i, st, st + SZ(done_list[0]))
+//             res_down[i % (2 * n)] = 0;
+//     }
+//     s_up = string_upper_find(x, x1);
+//     if (s_up >= 0){
+//         int st = s_up;
+//         FOR(i, st, st + SZ(done_list[1]))
+//             res_up[i % (2 * n)] = 1;
+//     }else{
+//         int s_down = string_lower_find(x, x1, true);
+//         int st = s_down;
+//         FOR(i, st, st + SZ(done_list[1]))
+//             res_down[i % (2 * n)] = 1;
+//     }
+//     s_up = string_upper_find(x, x2, true);
+//     if (s_up >= 0){
+//         int st = s_up;
+//         FOR(i, st, st + SZ(done_list[2]))
+//             res_up[i % (2 * n)] = 2;
+//     }else{
+//         int s_down = string_lower_find(x, x2);
+//         int st = s_down;
+//         FOR(i, st, st + SZ(done_list[2]))
+//             res_down[i % (2 * n)] = 2;
+//     }
+//     s_up = string_upper_find(x, x3, true);
+//     if (s_up >= 0){
+//         int st = s_up;
+//         FOR(i, st, st + SZ(done_list[3]))
+//             res_up[i % (2 * n)] = 3;
+//     }else{
+//         int s_down = string_lower_find(x, x3);
+//         int st = s_down;
+//         FOR(i, st, st + SZ(done_list[3]))
+//             res_down[i % (2 * n)] = 3;
+//     }
+//     REP(i, 2 * n){
+//         if (res_up[i] == -1){
+//             if (state[i] == x4)
+//                 res_up[i] = 4;
+//             else if (state[i] == x5)
+//                 res_up[i] = 5;
+//             else if (state[i] == x6)
+//                 res_up[i] = 6;
+//             else if (state[i] == x7)
+//                 res_up[i] = 7;
+//             else
+//                 res_up[i] = 8;
+//         }
+//         if (res_down[i] == -1){
+//             if (state[i + 2 * n] == x4)
+//                 res_down[i] = 4;
+//             else if (state[i + 2 * n] == x5)
+//                 res_down[i] = 5;
+//             else if (state[i + 2 * n] == x6)
+//                 res_down[i] = 6;
+//             else if (state[i + 2 * n] == x7)
+//                 res_down[i] = 7;
+//             else
+//                 res_down[i] = 8;
+//         }
+//     }
+//     // # print(res_up)
+//     // # print(res_down)
+//     VI length_list(max(MAX(res_up), MAX(res_down)) + 1, 0);
+//     for (int c: res_up)
+//         length_list[c] += 1;
+//     for (int c : res_down)
+//         length_list[c] += 1;
+//     FOR(i, 4, SZ(length_list))
+//         length_list[i] = 1;
 
-    VVI new_goal_state;
-    // VVI new_goal_state_sub;
-    if (goal_state[4 * n - 2] == goal_state[4 * n - 1]){
-        new_goal_state = {{0, 4, 1, 5}, {2, 6, 3, 7, 7}};
-        // new_goal_state_sub = {{0, 4, 2, 6}, {1, 5, 3, 7, 7}};
-    }else{
-        new_goal_state = {{0, 4, 1, 5}, {2, 6, 3, 7, 8}};
-        // new_goal_state_sub = {{0, 4, 2, 6}, {1, 5, 3, 7, 8}};
-    }
+//     VVI new_goal_state;
+//     // VVI new_goal_state_sub;
+//     if (goal_state[4 * n - 2] == goal_state[4 * n - 1]){
+//         new_goal_state = {{0, 4, 1, 5}, {2, 6, 3, 7, 7}};
+//         // new_goal_state_sub = {{0, 4, 2, 6}, {1, 5, 3, 7, 7}};
+//     }else{
+//         new_goal_state = {{0, 4, 1, 5}, {2, 6, 3, 7, 8}};
+//         // new_goal_state_sub = {{0, 4, 2, 6}, {1, 5, 3, 7, 8}};
+//     }
 
-    VVI initial_state{VI(), VI()};
-    int r_0 = 0;
-    if (res_up[0] == res_up.back() && res_up.back() < 4){
-        REP(i, 2 * n)
-            if (res_up[i] != res_up.back()){
-                r_0 = i;
-                break;
-            }
-    }
-    int s = -1;
-    FOR(i, r_0, SZ(res_up)){
-        int c = res_up[i];
-        if (c != s || c >= 4){
-            s = c;
-            initial_state[0].emplace_back(c);
-        }
-    }
-    int r_1 = 0;
-    if (res_down[0] == res_down.back() && res_down.back() < 4){
-        REP(i, 2 * n)
-            if (res_down[i] != res_down.back()){
-                r_1 = i;
-                break;
-            }
-    }
-    s = -1;
-    FOR(i, r_1, SZ(res_down)){
-        int c = res_down[i];
-        if (c != s || c >= 4){
-            s = c;
-            initial_state[1].emplace_back(c);
-        }
-    }
-    // # print(initial_state)
-    // # print(goal_state)
-    // # print(length_list)
-    // # print(r_0, r_1)
-    return solve_greed(initial_state, new_goal_state, length_list, r_0, r_1);
-}
+//     VVI initial_state{VI(), VI()};
+//     int r_0 = 0;
+//     if (res_up[0] == res_up.back() && res_up.back() < 4){
+//         REP(i, 2 * n)
+//             if (res_up[i] != res_up.back()){
+//                 r_0 = i;
+//                 break;
+//             }
+//     }
+//     int s = -1;
+//     FOR(i, r_0, SZ(res_up)){
+//         int c = res_up[i];
+//         if (c != s || c >= 4){
+//             s = c;
+//             initial_state[0].emplace_back(c);
+//         }
+//     }
+//     int r_1 = 0;
+//     if (res_down[0] == res_down.back() && res_down.back() < 4){
+//         REP(i, 2 * n)
+//             if (res_down[i] != res_down.back()){
+//                 r_1 = i;
+//                 break;
+//             }
+//     }
+//     s = -1;
+//     FOR(i, r_1, SZ(res_down)){
+//         int c = res_down[i];
+//         if (c != s || c >= 4){
+//             s = c;
+//             initial_state[1].emplace_back(c);
+//         }
+//     }
+//     // # print(initial_state)
+//     // # print(goal_state)
+//     // # print(length_list)
+//     // # print(r_0, r_1)
+//     return solve_greed(initial_state, new_goal_state, length_list, r_0, r_1);
+// }
 
 // VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
 optional<VS> solve_1xn(VI &initial_state, VI &goal_state, const VI& center_list){
@@ -1301,15 +1367,15 @@ VS solve_trivial(const VI &initial_state_sub, const VI& goal_state){
 
 const string DATA_DIR = "./data/";
 set<string> TARGET{
-    //    "globe_1/8",
-       "globe_1/16",
+       "globe_1/8",
+    //    "globe_1/16",
     //    "globe_2/6",
     //    "globe_3/4",
     //    "globe_6/4",
     //    "globe_6/8",
     //    "globe_6/10",
-       "globe_3/33",
-       "globe_8/25"
+    //    "globe_3/33",
+    //    "globe_8/25"
 };
 
 int main() {
