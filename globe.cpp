@@ -559,12 +559,12 @@ int heuristic_0(const VI &x, const VVI &done_list){
 
 int heuristic(const VI &x, const VI &y, const VVI &done_list, int base_index = 0, optional<int> add=nullopt){
     int h0 = heuristic_0(x, done_list);
-    int n = SZ(x) / 4;
+    // int n = SZ(x) / 4;
     if(!add)return h0;
     if (h0 > 0) return h0 * 1000;
     // # find index for base
     auto &base_list = done_list[base_index];
-    auto &x_joint = base_list;
+    // auto &x_joint = base_list;
     auto x_joint_add = base_list; x_joint_add.emplace_back(add.value());
 
     if (base_index ==0 || base_index==1){
@@ -575,47 +575,48 @@ int heuristic(const VI &x, const VI &y, const VVI &done_list, int base_index = 0
             return 0;
     }
 
-    VI x_;
-    int start_ind;
-    if (base_index ==0 || base_index==1){
-        int s_up = string_upper_find(x, x_joint);
-        if (s_up >= 0){
-            // start_ind = string_upper[:s_up].count("_") - 1;
-            x_ = x;
-            start_ind = s_up - 1;
-        }else{
-            // x_ = list(reversed(x[2 * n:])) + list(reversed(x[:2 * n]));
-            x_.insert(x_.end(), x.rbegin(), x.rend());
-            int s_up = string_upper_find(x_, x_joint);
-            assert (s_up >= 0);
-            start_ind = s_up - 1;
-        }
-    }else{
-        int s_low = string_lower_find(x, x_joint);
-        if (s_low >= 0){
-            start_ind = s_low - 1;
-            // x_ = x[2 * n:] + x[:2 * n];
-            x_.insert(x_.end(), x.begin()+2*n, x.end());
-            x_.insert(x_.end(), x.begin(), x.begin()+2*n);
-        }else{
-            // x_ = list(reversed(x[:2 * n])) + list(reversed(x[2 * n:]));
-            RREP(i,2*n)x_.emplace_back(x[i]);
-            RFOR(i,2*n, SZ(x))x_.emplace_back(x[i]);
-            s_low = string_upper_find(x_, x_joint);
-            assert (s_low >= 0);
-            start_ind = s_low - 1;
-        }
-    }
-    int res = 10000000;
-    int last_ind = start_ind + SZ(base_list) - 1;
-    REP(i_add, 4 * n){
-        if (x_[i_add] == add && (i_add < start_ind || last_ind < i_add)){
-            int a = min((last_ind + 1) % n, (((-(last_ind + 1)) % n) + n)%n);
-            int b = min(i_add % n, (((-i_add) % n)+n)%n);
-            res = min(res, a + b + 1);
-        }
-    }
-    return res;
+    return 1;
+    // VI x_;
+    // int start_ind;
+    // if (base_index ==0 || base_index==1){
+    //     int s_up = string_upper_find(x, x_joint);
+    //     if (s_up >= 0){
+    //         // start_ind = string_upper[:s_up].count("_") - 1;
+    //         x_ = x;
+    //         start_ind = s_up - 1;
+    //     }else{
+    //         // x_ = list(reversed(x[2 * n:])) + list(reversed(x[:2 * n]));
+    //         x_.insert(x_.end(), x.rbegin(), x.rend());
+    //         int s_up = string_upper_find(x_, x_joint);
+    //         assert (s_up >= 0);
+    //         start_ind = s_up - 1;
+    //     }
+    // }else{
+    //     int s_low = string_lower_find(x, x_joint);
+    //     if (s_low >= 0){
+    //         start_ind = s_low - 1;
+    //         // x_ = x[2 * n:] + x[:2 * n];
+    //         x_.insert(x_.end(), x.begin()+2*n, x.end());
+    //         x_.insert(x_.end(), x.begin(), x.begin()+2*n);
+    //     }else{
+    //         // x_ = list(reversed(x[:2 * n])) + list(reversed(x[2 * n:]));
+    //         RREP(i,2*n)x_.emplace_back(x[i]);
+    //         RFOR(i,2*n, SZ(x))x_.emplace_back(x[i]);
+    //         s_low = string_upper_find(x_, x_joint);
+    //         assert (s_low >= 0);
+    //         start_ind = s_low - 1;
+    //     }
+    // }
+    // int res = 10000000;
+    // int last_ind = start_ind + SZ(base_list) - 1;
+    // REP(i_add, 4 * n){
+    //     if (x_[i_add] == add && (i_add < start_ind || last_ind < i_add)){
+    //         int a = min((last_ind + 1) % n, (((-(last_ind + 1)) % n) + n)%n);
+    //         int b = min(i_add % n, (((-i_add) % n)+n)%n);
+    //         res = min(res, a + b + 1);
+    //     }
+    // }
+    // return res;
 }
 
 pair<VI, VS> add_one(
@@ -625,7 +626,8 @@ pair<VI, VS> add_one(
     const VVI& done_list, 
     int base_index = 0, 
     optional<int> add=nullopt,
-    int center = -1
+    // int center = -1
+    const VI &center_list=VI()
 ){
     // int n = SZ(initial_state) / 4;
     assert (SZ(initial_state) % 4 == 0);
@@ -656,17 +658,18 @@ pair<VI, VS> add_one(
         // closed_set.emplace((current_state));
 
         VS action_list;
-        if (center != -1){
+        if (center_list.empty()){
+            // action_list = [[k] for k in allowed_moves.keys()];
+            for(auto &[k,v]: allowed_moves_mod)
+                action_list.emplace_back(k);
+        }else{
             // action_list = [["r0"], ["-r0"], ["r1"], ["-r1"], [f"f{center}"]];
             action_list.emplace_back("r0");
             action_list.emplace_back("-r0");
             action_list.emplace_back("r1");
             action_list.emplace_back("-r1");
-            action_list.emplace_back("f"+to_string(center));
-        }else{
-            // action_list = [[k] for k in allowed_moves.keys()];
-            for(auto &[k,v]: allowed_moves_mod)
-                action_list.emplace_back(k);
+            for (int center: center_list)
+                action_list.emplace_back("f"+to_string(center));
         }
         for (auto &action :action_list){
             auto new_state = do_action(current_state, allowed_moves_mod[action]);
@@ -948,6 +951,65 @@ optional<pair<VVI,VS>> solve_greed(
 }
 
 
+optional<pair<VI,VS>> solve_last_greed(
+    const VI &initial_state, 
+    const VI &goal_state, 
+    map<string, VI> &allowed_moves,
+    const VVI &done_list,
+    const VI &center_list
+){
+    // int n = SZ(initial_state) / 4;
+    assert (SZ(initial_state) % 4 == 0);
+    assert (SZ(initial_state) == SZ(goal_state));
+    MINPQ<tuple<int,VI,VS>> open_set;
+
+    open_set.emplace(0, initial_state, VS());
+    ZobristHashing<uint64_t> zhash(1+MAX(initial_state), SZ(initial_state), rand_engine);
+    unordered_set<uint64_t> closed_set;
+
+    while (!open_set.empty()){
+        auto [_, current_state, path] = open_set.top(); open_set.pop();
+        auto hash=zhash.hash(current_state);
+        if(closed_set.contains(hash))
+            continue;
+
+        if (current_state == goal_state)
+            return pair<VI, VS>{current_state, path};
+
+        closed_set.emplace(hash);
+
+        VS action_list;
+        if (center_list.empty()){
+            // action_list = [[k] for k in allowed_moves.keys()];
+            for(auto &[k,v]: allowed_moves)
+                action_list.emplace_back(k);
+        }else{
+            // action_list = [["r0"], ["-r0"], ["r1"], ["-r1"], [f"f{center}"]];
+            action_list.emplace_back("r0");
+            action_list.emplace_back("-r0");
+            action_list.emplace_back("r1");
+            action_list.emplace_back("-r1");
+            for (int center: center_list)
+                action_list.emplace_back("f"+to_string(center));
+        }
+        for (auto &action : action_list){
+            auto new_state = do_action(current_state, allowed_moves[action]);
+            auto new_hash = zhash.hash(new_state);
+            if (!closed_set.contains(new_hash)){
+            // if (!closed_set.contains(new_state)){
+                int h_new = heuristic_0(new_state, done_list);
+                if (h_new == 0){
+                    int priority = SZ(path) + 1 + h_new;
+                    path.emplace_back(action);
+                    open_set.emplace(priority, new_state, path);
+                    path.pop_back();
+                }
+            }
+        }
+    }
+    return nullopt;
+}
+
 optional<pair<VVI,VS>> solve_last(const VI &state, const VI &goal_state, const VVI &done_list){
     const auto &x = state;
     int n = SZ(x) / 4;
@@ -1095,8 +1157,18 @@ optional<pair<VVI,VS>> solve_last(const VI &state, const VI &goal_state, const V
     return solve_greed(initial_state, new_goal_state, length_list, r_0, r_1);
 }
 
-VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
+// VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
+optional<VS> solve_1xn(VI &initial_state, VI &goal_state, const VI& center_list){
     int n = SZ(initial_state) / 4;
+    VI j_list;
+    REP(_, n - 2){
+        VI x(4);
+        ARANGE(x);
+        shuffle(ALL(x), rand_engine);
+        j_list.insert(j_list.end(), x.begin(), x.end());
+    }
+    dump(j_list)
+
     map<string, VI> allowed_moves_mod;
 
     VI perm;
@@ -1125,62 +1197,119 @@ VS solve_1xn(VI &initial_state, VI &goal_state, bool any_flip = false){
         allowed_moves_mod["f"+to_string(i)] = product(product(product(product(allowed_moves_mod["-r0"], allowed_moves_mod["-r1"]), allowed_moves_mod["f"+to_string(i - 1)]), allowed_moves_mod["r0"]), allowed_moves_mod["r1"]);
 
     VS sol;
+    VVI done_list{{goal_state[0]}, {goal_state[n]}, {goal_state[2 * n]}, {goal_state[3 * n]}};
+    auto state = initial_state;
+    VI j_count(4,0);
+
+    VS sol_add;
+    j_list.pop_back();
+    for (int j : j_list){
+        int k=j_count[j];
+        tie(state, sol_add) = add_one(
+            state, goal_state, allowed_moves_mod, done_list,
+            j, goal_state[n * j + k + 1], center_list
+        );
+        sol.insert(sol.end(), sol_add.begin(), sol_add.end());
+        done_list[j].emplace_back(goal_state[n * j + k + 1]);
+        // # print(k, j, done_list)
+        // # print(state)
+        j_count[j] += 1;
+    }
+    assert(heuristic_0(state, done_list) == 0);
+    auto result = solve_last_greed(state, goal_state, allowed_moves_mod, done_list, center_list);
+    if (result){
+        sol_add = result.value().second;
+        sol.insert(sol.end(), sol_add.begin(), sol_add.end());
+        OUT("Success at center", center_list);
+        return sol;
+    }else{
+        OUT("Failed at center", center_list);
+        return nullopt;
+    }
+
     // # print(allowed_moves_mod)
     // VI i_list(2*n);
-    vector<PII> i_list2(2*n);
-    REP(i, 2*n)
-        // i_list[i]=min(i % n, ((-i)%n+n) % n);
-        i_list2[i]={min(i % n, ((-i)%n+n) % n), i};
-    VI i_list = argsort(i_list2);
-    if (any_flip)
-        i_list.insert(i_list.begin(), -1);
-    else
-        i_list.emplace_back(-1);
+    // vector<PII> i_list2(2*n);
+    // REP(i, 2*n)
+    //     // i_list[i]=min(i % n, ((-i)%n+n) % n);
+    //     i_list2[i]={min(i % n, ((-i)%n+n) % n), i};
+    // VI i_list = argsort(i_list2);
+    // if (any_flip)
+    //     i_list.insert(i_list.begin(), -1);
+    // else
+    //     i_list.emplace_back(-1);
 
-    for (int i : i_list){
-        VVI done_list{{goal_state[0]}, {goal_state[n]}, {goal_state[2 * n]}, {goal_state[3 * n]}};
-        auto state = initial_state;
-        VS sol_add;
-        sol.clear();
-        REP(k, n - 2){
-            REP(j, 4){
-                if (k >= n - 3 && j == 3)
-                    break;
-                tie(state, sol_add) = add_one(
-                    state, goal_state, allowed_moves_mod, done_list,
-                    j, goal_state[n * j + k + 1], i
-                );
-                sol.insert(sol.end(), sol_add.begin(), sol_add.end());
-                done_list[j].emplace_back(goal_state[n * j + k + 1]);
-                // # print(k, j, done_list)
-            }
-        }
-        // # print(state)
-        assert(heuristic_0(state, done_list) == 0);
-        // dump(sol)
-        auto result = solve_last(state, goal_state, done_list);
-        if (result){
-            sol_add = result.value().second;
-            sol.insert(sol.end(), sol_add.begin(), sol_add.end());
-            OUT("Success at center", i);
-            break;
-        }else
-            OUT("Failed at center", i);
-    }
+    // for (int i : i_list){
+    //     VVI done_list{{goal_state[0]}, {goal_state[n]}, {goal_state[2 * n]}, {goal_state[3 * n]}};
+    //     auto state = initial_state;
+    //     VS sol_add;
+    //     sol.clear();
+    //     REP(k, n - 2){
+    //         REP(j, 4){
+    //             if (k >= n - 3 && j == 3)
+    //                 break;
+    //             tie(state, sol_add) = add_one(
+    //                 state, goal_state, allowed_moves_mod, done_list,
+    //                 j, goal_state[n * j + k + 1], i
+    //             );
+    //             sol.insert(sol.end(), sol_add.begin(), sol_add.end());
+    //             done_list[j].emplace_back(goal_state[n * j + k + 1]);
+    //             // # print(k, j, done_list)
+    //         }
+    //     }
+    //     // # print(state)
+    //     assert(heuristic_0(state, done_list) == 0);
+    //     // dump(sol)
+    //     auto result = solve_last(state, goal_state, done_list);
+    //     if (result){
+    //         sol_add = result.value().second;
+    //         sol.insert(sol.end(), sol_add.begin(), sol_add.end());
+    //         OUT("Success at center", i);
+    //         break;
+    //     }else
+    //         OUT("Failed at center", i);
+    // }
     return sol;
+}
+
+VS solve_trivial(const VI &initial_state_sub, const VI& goal_state){
+    int res_plus = 0;
+    auto temp = initial_state_sub;
+    while (temp != goal_state){
+        // temp = temp[1:] + [temp[0]];
+        rotate(temp.begin(), temp.begin()+1, temp.end());
+        res_plus += 1;
+    }
+    int res_minus = 0;
+    temp = initial_state_sub;
+    while (temp != goal_state){
+        // temp = [temp[-1]] + temp[:-1];
+        auto t=temp;temp.clear();
+        temp.emplace_back(t.back());
+        temp.insert(temp.end(), t.begin(), t.begin()+SZ(t)-1);
+        res_minus += 1;
+    }
+    VS res;
+    if (res_plus <= res_minus){
+        REP(_, res_plus)res.emplace_back("r0");
+        return res;
+    }else{
+        REP(_, res_minus)res.emplace_back("-r0");
+        return res;
+    }
 }
 
 const string DATA_DIR = "./data/";
 set<string> TARGET{
-       "globe_1/8",
-    //    "globe_1/16",
+    //    "globe_1/8",
+       "globe_1/16",
     //    "globe_2/6",
     //    "globe_3/4",
     //    "globe_6/4",
     //    "globe_6/8",
     //    "globe_6/10",
-    //    "globe_3/33",
-    //    "globe_8/25"
+       "globe_3/33",
+       "globe_8/25"
 };
 
 int main() {
@@ -1237,7 +1366,11 @@ int main() {
             OUT("initial_state:", _initial_state);
             OUT("goal_state:", _goal_state);
 
-            auto _sol = solve_1xn(_initial_state, _goal_state);
+            auto _sol_opt = solve_1xn(_initial_state, _goal_state, VI{0,_n});
+            while(!_sol_opt)
+                _sol_opt = solve_1xn(_initial_state, _goal_state, VI{0,_n});
+            VS &_sol=_sol_opt.value();
+            // auto _sol = solve_1xn(_initial_state, _goal_state);
             // auto _sol = solve_1xn(_initial_state, _goal_state, true);
             dump(_sol)
             for (auto &_m :_sol){
@@ -1252,10 +1385,11 @@ int main() {
                 else if (_m == "-r1")
                     _sol_all.emplace_back("-r"+to_string(_y - _j));
             }
-            VI candidate(2*_n+1);
-            candidate[0]=_n;
-            REP(i,2*_n)candidate[i+1]=i;
-            for (auto _q : candidate){
+            // VI candidate(2*_n+1);
+            // candidate[0]=_n;
+            // REP(i,2*_n)candidate[i+1]=i;
+            // for (auto _q : candidate){
+            for (auto _q : VI{0, _n}){
                 if (std::count(ALL(_sol_all), "f"+to_string(_q)) % 2 == 1){
                     REP(_, _n)
                         _sol_all.emplace_back("r"+to_string(_j));
@@ -1267,6 +1401,20 @@ int main() {
                         _sol_all.emplace_back("r"+to_string(_j));
                     _sol_all.emplace_back("f"+to_string(_q));
                 }
+            }
+        }
+        if (_y % 2 == 0){
+            int _yy = _y / 2;
+            int _mm = _yy * _n * 2;
+            // _initial_state_all[_mm:-_mm], _goal_state_all[_mm:-_mm]
+            VI _initial_state(initial_state.begin()+_mm, initial_state.begin()+SZ(initial_state)-_mm), 
+                _goal_state(solution_state.begin()+_mm, solution_state.begin()+SZ(solution_state)-_mm);
+            auto _sol_add = solve_trivial(_initial_state, _goal_state);
+            for (auto &_m : _sol_add){
+                if (_m == "r0")
+                    _sol_all.emplace_back("r"+to_string(_yy));
+                else if (_m == "-r0")
+                    _sol_all.emplace_back("-r"+to_string(_yy));
             }
         }
         dump(_sol_all)
