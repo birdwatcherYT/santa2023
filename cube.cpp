@@ -861,37 +861,50 @@ VI solve_edge(const VI& start){
         penalty/=2;
         return penalty;
     };
-    auto edge_penalty = [&](int panel, const VI& state){
-        int penalty=0;
-        FOR(i, 1, X-1)for(int j: VI{0, X-1}){
-            int idx=size*panel+i*X+j;
-            penalty+=state[idx]!=solution_state[idx];
+    map<VI, int> edges;
+    REP(panel, 6)for(int j: VI{0, X-1}){
+        VI e1,e2;
+        FOR(i, 1, X-1){
+            e1.emplace_back(solution_state[size*panel+i*X+j]);
+            e2.emplace_back(solution_state[size*panel+j*X+i]);
         }
-        FOR(j, 1, X-1)for(int i: VI{0, X-1}){
-            int idx=size*panel+i*X+j;
-            penalty+=state[idx]!=solution_state[idx];
+        edges[e1]++;
+        edges[e2]++;
+        // edges.emplace_back(e1);
+        // edges.emplace_back(e2);
+    }
+
+    auto edge_ok = [&](int panel, const VI& state){
+        int ok=0;
+        for(int j: VI{0, X-1}){
+            VI e1,e2;
+            FOR(i, 1, X-1){
+                e1.emplace_back(state[size*panel+i*X+j]);
+                e2.emplace_back(state[size*panel+j*X+i]);
+            }
+            if(edges.contains(e1))
+                ok++;
+            if(edges.contains(e2))
+                ok++;
         }
-        if(penalty%2==1)
-            penalty++;
-        penalty/=2;
-        return penalty;
+        return ok;
     };
 
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
-    VI target_panel;
-    auto center_penalty_cumsum = [&](const VI& state){
+    auto center_penalty_cumsum = [&](const VI& state, int edge_num){
         int penalty=0;
-        REP(t, 6)
+        int ok_e=0;
+        REP(t, 6){
             penalty+=center_penalty(t, state);
-        for(int t: target_panel)
-            penalty+=edge_penalty(t, state);
-        return penalty;
+            ok_e+=edge_ok(t, state);
+        }
+        return penalty+max(0, edge_num-ok_e);
     };
 
-    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &)> search;
-    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit){
-        int h=center_penalty_cumsum(state);
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int edge_num){
+        int h=center_penalty_cumsum(state, edge_num);
         if (h==0)
             return true;
         // if(SZ(path) >= max_action_size) return false;
@@ -920,7 +933,7 @@ VI solve_edge(const VI& start){
                 continue;
             visit.emplace(next_hash);
             path.emplace_back(a);
-            if (search(next, path, next_same_action_num, max_action_size, visit))
+            if (search(next, path, next_same_action_num, max_action_size, visit, edge_num))
                 return true;
             path.pop_back();
             visit.erase(next_hash);
@@ -930,18 +943,14 @@ VI solve_edge(const VI& start){
 
     auto state=start;
     VI all_path;
-    VI panels{0,5, 1,2, 4,3};
-    shuffle(ALL(panels), rand_engine);
-    for(auto panel: panels){
-        target_panel.emplace_back(panel);
-
+    FOR(i, 1, 6*4+1){
         FOR(max_action_size, 1, INF){
             dump(max_action_size)
             unordered_set<uint64_t> visit;
             visit.emplace(zhash.hash(state));
             VI path;
-            if(search(state, path, 0, max_action_size, visit)){
-                OUT("Find!", path, target_panel);
+            if(search(state, path, 0, max_action_size, visit, i)){
+                OUT("Find!", path, i);
                 state=simulation(state, path);
                 all_path.insert(all_path.end(), path.begin(), path.end());
                 break;
@@ -955,7 +964,25 @@ int cube_solver(){
     auto center_path=solve_center();
     dump(center_path);
     dump(action_decode(center_path));
-    auto state=simulation(initial_state,center_path);
+
+    // 200
+    // VI center_path = { 0, 22, 2, 23, 0, 22, 15, 22, 6, 0, 0, 16, 18, 7, 7, 21, 2, 19, 2, 16, 2, 16, 2, 4, 2, 7, 14, 3, 9, 7, 21, 4, 15, 16, };
+    // // // action_decode(center_path) = f0.-d2.f2.-d3.f0.-d2.-f3.-d2.r2.f0.f0.-r0.-r2.r3.r3.-d1.f2.-r3.f2.-r0.f2.-r0.f2.r0.f2.r3.-f2.f3.d1.r3.-d1.r0.-f3.-r0
+    // VI edge_path{ 12, 8, 0, 20, 15, 20, 3, 8, 3, 16, 15, 4, 5, 11, 17, 20, 14, 8, 2, 8, 1, 3, 4, 15, 16, 13, 4, 17, 12, 16, 0, 5, 11, 16, 23, 4, 3, 18, 12, 6, 0, 3, 3, 8, 3, 20, 12, 11, 0, 23, 12, 12, 8, 0, 0, 20, 12, 12, 20, 0, 14, 8, 0, 20, 2, 8, 12, 0, 11, 14, 11, 12, 23, 2, 3, 23, 15, 0, 23, 12, 11, 3, 16, 14, 4, 15, 16, 2, 4, 15, 11, 3, 23, };
+    // action_decode(edge_path) = -f0.d0.f0.-d0.-f3.-d0.f3.d0.f3.-r0.-f3.r0.r1.d3.-r1.-d0.-f2.d0.f2.d0.f1.f3.r0.-f3.-r0.-f1.r0.-r1.-f0.-r0.f0.r1.d3.-r0.-d3.r0.f3.-r2.-f0.r2.f0.f3.f3.d0.f3.-d0.-f0.d3.f0.-d3.-f0.-f0.d0.f0.f0.-d0.-f0.-f0.-d0.f0.-f2.d0.f0.-d0.f2.d0.-f0.f0.d3.-f2.d3.-f0.-d3.f2.f3.-d3.-f3.f0.-d3.-f0.d3.f3.-r0.-f2.r0.-f3.-r0.f2.r0.-f3.d3.f3.-d3
+
+    // 200
+    // VI center_path{ 15, 10, 10, 15, 2, 8, 13, 10, 4, 5, 3, 17, 22, 4, 4, 11, 6, 11, 14, 7, 2, 18, 0, 11, 0, 19, 9, 12, 21, 0, 0, 7, 12, };
+    // action_decode(center_path) = -f3.d2.d2.-f3.f2.d0.-f1.d2.r0.r1.f3.-r1.-d2.r0.r0.d3.r2.d3.-f2.r3.f2.-r2.f0.d3.f0.-r3.d1.-f0.-d1.f0.f0.r3.-f0
+
+    // 205
+    // // Find! [ 1, 16, 1, 4, 13, 16, 13, 23, 1, 4, 11, 13, ] [ 3, 2, 1, 5, 4, 0, ]
+    // VI center_path{ 2, 4, 13, 5, 6, 1, 1, 2, 16, 10, 4, 22, 0, 8, 10, 0, 22, 5, 0, 17, 1, 7, 1, 8, 8, 23, 13, 19, 13, 2, 11, 14, 7, 1, 11, 13, 1, 16, 1, 4, 13, 16, 13, 23, 1, 4, 11, 13, };
+    // // action_decode(center_path) = f2.r0.-f1.r1.r2.f1.f1.f2.-r0.d2.r0.-d2.f0.d0.d2.f0.-d2.r1.f0.-r1.f1.r3.f1.d0.d0.-d3.-f1.-r3.-f1.f2.d3.-f2.r3.f1.d3.-f1.f1.-r0.f1.r0.-f1.-r0.-f1.-d3.f1.r0.d3.-f1
+    // VI edge_path{ 6, 3, 8, 15, 20, 18, 4, 20, 16, 8, 21, 16, 0, 4, 12, 9, 4, 11, 16, 23, 10, 3, 16, 15, 4, 22, 0, 8, 12, 20, 8, 15, 20, 19, 3, 7, 9, 0, 4, 12, 16, 21, 11, 16, 9, 19, 23, 7, 21, 0, 4, 12, 23, 16, 11, 4, 9, 4, 0, 16, 12, 21, 10, 10, 19, 0, 7, 12, 10, 10, 12, 23, 0, 22, 0, 11, 12, 10, 4, 3, 16, 15, 10, 4, 23, 16, 9, 11, 12, 21, 22, 0, 19, 8, 12, 20, 3, 19, 15, 8, 7, 20, 8, 7, 20, 19, };
+    // // action_decode(edge_path) = r2.f3.d0.-f3.-d0.-r2.r0.-d0.-r0.d0.-d1.-r0.f0.r0.-f0.d1.r0.d3.-r0.-d3.d2.f3.-r0.-f3.r0.-d2.f0.d0.-f0.-d0.d0.-f3.-d0.-r3.f3.r3.d1.f0.r0.-f0.-r0.-d1.d3.-r0.d1.-r3.-d3.r3.-d1.f0.r0.-f0.-d3.-r0.d3.r0.d1.r0.f0.-r0.-f0.-d1.d2.d2.-r3.f0.r3.-f0.d2.d2.-f0.-d3.f0.-d2.f0.d3.-f0.d2.r0.f3.-r0.-f3.d2.r0.-d3.-r0.d1.d3.-f0.-d1.-d2.f0.-r3.d0.-f0.-d0.f3.-r3.-f3.d0.r3.-d0.d0.r3.-d0.-r3
+
+    auto state=simulation(initial_state, center_path);
     auto edge_path=solve_edge(state);
     dump(edge_path);
     dump(action_decode(edge_path));
@@ -967,7 +994,7 @@ map<string, int> TARGET{
     //    {"cube_2/2/2", 5},
     //    {"cube_3/3/3", 4},
        {"cube_4/4/4", 4},
-       {"cube_5/5/5", 3},
+    //    {"cube_5/5/5", 3},
     //    {"cube_6/6/6", 3},
     //    {"cube_7/7/7", 3},
     //    {"cube_8/8/8", 3},
@@ -999,7 +1026,9 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     // REP(i, case_num){
-    FOR(i, 205, case_num){
+    // FOR(i, 205, 210){
+    FOR(i, 205+1, 210){
+    // FOR(i, 200, 210){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
