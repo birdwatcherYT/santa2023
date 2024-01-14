@@ -693,7 +693,7 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 }
 
 
-void solve_center(){
+VI solve_center(){
     int size=X*X;
     auto center_penalty = [&](int panel, const VI& state){
         int penalty=0;
@@ -701,7 +701,29 @@ void solve_center(){
             int idx=size*panel+i*X+j;
             penalty+=state[idx]!=solution_state[idx];
         }
+        if(penalty%2==1)
+            penalty++;
+        penalty/=2;
         return penalty;
+        // int row_penalty=0;
+        // FOR(i, 1, X-1){
+        //     int row=0;
+        //     FOR(j, 1, X-1){
+        //         int idx=size*panel+i*X+j;
+        //         row+=state[idx]!=solution_state[idx];
+        //     }
+        //     row_penalty+=(row!=0);
+        // }
+        // int col_penalty=0;
+        // FOR(j, 1, X-1){
+        //     int col=0;
+        //     FOR(i, 1, X-1){
+        //         int idx=size*panel+i*X+j;
+        //         col+=state[idx]!=solution_state[idx];
+        //     }
+        //     col_penalty+=(col!=0);
+        // }
+        // return max(row_penalty, col_penalty);
     };
 
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
@@ -717,9 +739,11 @@ void solve_center(){
 
     function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &)> search;
     search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit){
-        if (center_penalty_cumsum(state)==0)
+        int h=center_penalty_cumsum(state);
+        if (h==0)
             return true;
-        if(SZ(path) >= max_action_size) return false;
+        // if(SZ(path) >= max_action_size) return false;
+        if(h+SZ(path) >= max_action_size) return false;
         REP(a, allowed_action_num*2){
             int next_same_action_num=1;
             if(!path.empty()){
@@ -754,18 +778,23 @@ void solve_center(){
 
 
     auto state=initial_state;
+    VI all_path;
+    VI panels{0,5, 1,2, 4,3};
+    shuffle(ALL(panels), rand_engine);
+    // VI panels{0,5, 1,3, 2,4};
     // for(auto [panel1,panel2]: vector<PII>{{0,5}, {1,3}, {2,4}}){
-    for(auto panel: vector<int>{0,5, 1,3, 2,4}){
+    for(auto panel: panels){
         target_panel.emplace_back(panel);
         // target_panel.emplace_back(panel1);
         // target_panel.emplace_back(panel2);
         
-        // for(int panel: VI{panel1, panel2}){
+        // for(int panel: VI{panel1, panel2})
+        {
             FOR(i, 1, X-1)FOR(j, 1, X-1){
                 int idx=size*panel+i*X+j;
                 target_label.emplace(solution_state[idx]);
             }
-        // }
+        }
 
         FOR(max_action_size, 1, INF){
             dump(max_action_size)
@@ -773,8 +802,9 @@ void solve_center(){
             visit.emplace(zhash.hash(state, target_label));
             VI path;
             if(search(state, path, 0, max_action_size, visit)){
-                OUT("Find!", path);
+                OUT("Find!", path, target_panel);
                 state=simulation(state, path);
+                all_path.insert(all_path.end(), path.begin(), path.end());
                 break;
             }
         }
@@ -795,7 +825,8 @@ void solve_center(){
         //     auto actions=construct_actions(init_hash, hash, pushed);
         //     auto current_state=simulation(state, actions);
         //     if(mistake==0){
-        //         OUT("find", panel1, panel2, searched);
+        //         // OUT("find", panel1, panel2, searched);
+        //         OUT("find", panel, searched);
         //         state=current_state;
         //         break;
         //     }
@@ -814,10 +845,120 @@ void solve_center(){
         //     }
         // }
     }
+    return all_path;
+}
+
+VI solve_edge(const VI& start){
+    int size=X*X;
+    auto center_penalty = [&](int panel, const VI& state){
+        int penalty=0;
+        FOR(i, 1, X-1)FOR(j, 1, X-1){
+            int idx=size*panel+i*X+j;
+            penalty+=state[idx]!=solution_state[idx];
+        }
+        if(penalty%2==1)
+            penalty++;
+        penalty/=2;
+        return penalty;
+    };
+    auto edge_penalty = [&](int panel, const VI& state){
+        int penalty=0;
+        FOR(i, 1, X-1)for(int j: VI{0, X-1}){
+            int idx=size*panel+i*X+j;
+            penalty+=state[idx]!=solution_state[idx];
+        }
+        FOR(j, 1, X-1)for(int i: VI{0, X-1}){
+            int idx=size*panel+i*X+j;
+            penalty+=state[idx]!=solution_state[idx];
+        }
+        if(penalty%2==1)
+            penalty++;
+        penalty/=2;
+        return penalty;
+    };
+
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+
+    VI target_panel;
+    auto center_penalty_cumsum = [&](const VI& state){
+        int penalty=0;
+        REP(t, 6)
+            penalty+=center_penalty(t, state);
+        for(int t: target_panel)
+            penalty+=edge_penalty(t, state);
+        return penalty;
+    };
+
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit){
+        int h=center_penalty_cumsum(state);
+        if (h==0)
+            return true;
+        // if(SZ(path) >= max_action_size) return false;
+        if(h+SZ(path) >= max_action_size) return false;
+        REP(a, allowed_action_num*2){
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            if (search(next, path, next_same_action_num, max_action_size, visit))
+                return true;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return false;
+    };
+
+    auto state=start;
+    VI all_path;
+    VI panels{0,5, 1,2, 4,3};
+    shuffle(ALL(panels), rand_engine);
+    for(auto panel: panels){
+        target_panel.emplace_back(panel);
+
+        FOR(max_action_size, 1, INF){
+            dump(max_action_size)
+            unordered_set<uint64_t> visit;
+            visit.emplace(zhash.hash(state));
+            VI path;
+            if(search(state, path, 0, max_action_size, visit)){
+                OUT("Find!", path, target_panel);
+                state=simulation(state, path);
+                all_path.insert(all_path.end(), path.begin(), path.end());
+                break;
+            }
+        }
+    }
+    return all_path;
 }
 
 int cube_solver(){
-    solve_center();
+    auto center_path=solve_center();
+    dump(center_path);
+    dump(action_decode(center_path));
+    auto state=simulation(initial_state,center_path);
+    auto edge_path=solve_edge(state);
+    dump(edge_path);
+    dump(action_decode(edge_path));
     return INF;
 }
 
@@ -857,7 +998,8 @@ int main() {
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    REP(i, case_num){
+    // REP(i, case_num){
+    FOR(i, 205, case_num){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);

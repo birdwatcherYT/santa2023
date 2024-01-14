@@ -5,7 +5,7 @@ TARGETS = $(SOURCES:.cpp=.exe)
 DEPENDS = $(OBJECTS:.o=.d)
 
 CXX      = g++
-CXXFLAGS = -g -MMD -MP -Wall -Wextra -Winit-self -Wno-unused-parameter -std=c++20 -O3 -fopenmp
+CXXFLAGS = -g -MMD -MP -Wall -Wextra -Winit-self -Wno-unused-parameter -std=c++23 -O3 -fopenmp
 RM       = rm -f
 LDFLAGS  = -fopenmp
 INCLUDE  = 
