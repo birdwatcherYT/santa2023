@@ -298,6 +298,7 @@ vector<unordered_map<int,int>> allowed_moves_inverse;
 
 #define get_action(id) ((id)<allowed_action_num ? allowed_moves[id] : allowed_moves_inverse[(id)-allowed_action_num])
 #define get_action_name(id) ((id)<allowed_action_num ? allowed_moves_name[id] : ("-"+allowed_moves_name[(id)-allowed_action_num]))
+#define get_base_action(id) ((id)<allowed_action_num ? (id) : (id)-allowed_action_num)
 
 VI do_action(const VI& state, const unordered_map<int,int> &action){
     auto s=state;
@@ -602,6 +603,10 @@ int get_mistakes(const VI& state,const VI& goal_state){
     return cnt;
 }
 
+int get_group_id(int a){
+    return to_group_id[get_base_action(a)];
+}
+
 // 同じ色
 // int get_penalty(const VI& state){
 //     int cnt=0;
@@ -723,9 +728,9 @@ optional<VI> search(const VI &start_state, const VI& goal_state, int current_bes
                     dump(pq.size())
                 if(pushed.size()%5000000==0)
                     dump(pushed.size())
-                // 打ち切り
-                if(pq.size()>give_up||pushed.size()>give_up)
-                    return nullopt;
+                // // 打ち切り
+                // if(pq.size()>give_up||pushed.size()>give_up)
+                //     return nullopt;
             }
     }
     return nullopt;
@@ -2182,9 +2187,6 @@ VI summerize_rotate(const VI& action, int intercept=0){
             new_a=group_id_to_converter[gid][new_a];
         return new_a;
     };
-    auto to_base_act=[&](int a){
-        return a<allowed_action_num ? a : a-allowed_action_num;
-    };
 
     auto subprocess = [&]() {
         if (group_id_to_converter.contains(prev_group_id)){
@@ -2213,9 +2215,9 @@ VI summerize_rotate(const VI& action, int intercept=0){
                     best_new_samegroup=new_samegroup, best_sumrotate=sumrotate, best_add_rotate=t;
             }
             if(best_add_rotate!=0){
-                dump(samegroup)
-                dump(best_new_samegroup)
-                dump(best_add_rotate)
+                // dump(samegroup)
+                // dump(best_new_samegroup)
+                // dump(best_add_rotate)
                 mapping.emplace_back(prev_group_id, best_add_rotate);
             }
             samegroup=best_new_samegroup;
@@ -2232,12 +2234,12 @@ VI summerize_rotate(const VI& action, int intercept=0){
 
     for(int a: action){
         int new_a=convert(a, mapping);
-        int act=to_base_act(new_a);
+        int act=get_base_action(new_a);
         if(prev_group_id!=to_group_id[act]){
             subprocess();
             fill(ALL(samegroup), 0);
             new_a=convert(a, mapping);
-            act=to_base_act(new_a);
+            act=get_base_action(new_a);
         }
         if(new_a<allowed_action_num)samegroup[act]++;
         else samegroup[act]--;
@@ -2263,18 +2265,18 @@ VI summerize_rotate(const VI& action, int intercept=0){
         group_count[gid]+=count;
         group_count[gid]%=group_to_rotate_num[gid];
     }
-    dump(group_count)
+    // dump(group_count)
     for(auto&[gid, count]: group_count){
         if(count>group_to_rotate_num[gid]/2)
             count=group_to_rotate_num[gid]-count;
     }
-    dump(group_count)
+    // dump(group_count)
     map<int, int> size_count;
     for(auto&[gid, count]: group_count)
         size_count[group_to_rotate_num[gid]]+=count;
 
     // TODO: ベスト挿入箇所を探索する
-    dump(size_count)
+    // dump(size_count)
     // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI());
     // auto add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), need_rotate);
     // 遅い場合がある
@@ -2285,7 +2287,7 @@ VI summerize_rotate(const VI& action, int intercept=0){
         dump(size_count)
         add_rotate=rotate_all(simulation(initial_state, result), 0, VI(), size_count);
     }
-    dump(add_rotate.value().size())
+    // dump(add_rotate.value().size())
     result.insert(result.end(), add_rotate.value().begin(), add_rotate.value().end());
 
     // NOTE: 回転をそのまま使うと系列が長くなる
@@ -2424,6 +2426,112 @@ VI rotate_skip(const VI& action){
     return result;
 }
 
+VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
+    VI result;
+    auto state=initial_state;
+    int i;
+    for(i=0;i< SZ(actions);){
+        if(i%100==0) OUT(i, "/", SZ(actions));
+        bool update=false;
+        VI a1;
+        auto s1_tmp=state;
+        FOR(len1, 1, min(length+1, SZ(actions)-i))if(!update){
+            s1_tmp=do_action(s1_tmp, actions[i+len1-1]);
+            a1.emplace_back(actions[i+len1-1]);
+            
+            auto s1=s1_tmp;
+            auto s2_tmp=state;
+
+            VI a2;
+            FOR(len2, 1, min(length+1, SZ(actions)-i-len1)){
+                s1=do_action(s1, actions[i+len1+len2-1]);
+                s2_tmp=do_action(s2_tmp, actions[i+len1+len2-1]);
+                a2.emplace_back(actions[i+len1+len2-1]);
+                //
+                int g1_front=get_group_id(a1.front());
+                int g2_front=get_group_id(a2.front());
+                int g1_back=get_group_id(a1.back());
+                int g2_back=get_group_id(a2.back());
+                if(!(a1!=a2 && (g1_front!=g2_front || g1_back!=g2_back || g1_front==g2_back)))
+                    continue;
+                //
+                auto s2=s2_tmp;
+                REP(k, len1) s2=do_action(s2, actions[i+k]);
+                if(s1!=s2) continue;
+                // OUT("can swap", a1, a2);
+                if(g1_front==g2_back || (g1_front!=g2_front && !result.empty() && get_group_id(result.back())==g2_front)){
+                    auto tmp=result;
+                    tmp.insert(tmp.end(), a2.begin(), a2.end());
+                    tmp.insert(tmp.end(), a1.begin(), a1.end());
+                    int sz=SZ(tmp);
+                    tmp=cancel_opposite(tmp);
+                    if(SZ(tmp)<sz){
+                        OUT("improve front!", sz-SZ(tmp));
+                        result=tmp;
+                        state=s1;
+                        i+=len1+len2;
+                        update=true;
+                        break;
+                    }else if(run_summerize_rotate){
+                        for(int j=i+len1+len2; j<SZ(actions); ++j)
+                            tmp.emplace_back(actions[j]);
+                        sz=SZ(tmp);
+                        tmp=summerize_rotate(tmp);
+                        if(SZ(tmp)<sz){
+                            OUT("improve front!!", sz-SZ(tmp));
+                            result=tmp;
+                            state=simulation(initial_state, result);
+                            i=SZ(actions);
+                            update=true;
+                            break;
+                        }
+                    }
+                }
+                if(g1_back!=g2_back && i+len1+len2<SZ(actions) && get_group_id(actions[i+len1+len2])==g1_back){
+                    auto tmp=result;
+                    tmp.insert(tmp.end(), a2.begin(), a2.end());
+                    tmp.insert(tmp.end(), a1.begin(), a1.end());
+                    int j;
+                    for(j=i+len1+len2; j<SZ(actions) && g1_back==get_group_id(actions[j]); ++j)
+                        tmp.emplace_back(actions[j]);
+                    int sz=SZ(tmp);
+                    tmp=cancel_opposite(tmp);
+                    if(SZ(tmp)<sz){
+                        OUT("improve back!", sz-SZ(tmp));
+                        result=tmp;
+                        state=simulation(initial_state, result);
+                        i=j;
+                        update=true;
+                        break;
+                    }else if(run_summerize_rotate){
+                        for(; j<SZ(actions); ++j)
+                            tmp.emplace_back(actions[j]);
+                        sz=SZ(tmp);
+                        tmp=summerize_rotate(tmp);
+                        if(SZ(tmp)<sz){
+                            OUT("improve back!!", sz-SZ(tmp));
+                            result=tmp;
+                            state=simulation(initial_state, result);
+                            i=SZ(actions);
+                            update=true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if(!update){
+            result.emplace_back(actions[i]);
+            state=do_action(state, actions[i]);
+            ++i;
+        }
+    }
+    for(; i< SZ(actions); ++i)
+        result.emplace_back(actions[i]);
+    return result;
+}
+
+
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
     if(!file_exists(filename))
@@ -2432,13 +2540,15 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     dump(SZ(actions))
 
     auto result = actions;
+    // result = find_swap(result, 100, false);
+    // result = find_swap(result, 10, true);
     // result=rotate_skip(result);
     // result = wildcard_finish(result);
     // result = cancel_opposite(result);
     // result = kstep_replace(result, depth);
     // result = kstep_replace(result, depth, true);
     // result = kstep_replace(result, depth, false);
-    result=summerize_rotate(result, 0);
+    // result=summerize_rotate(result, 0);
     // result=summerize_rotate(result, 1);
     // result=summerize_rotate(result, -1);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
@@ -2686,6 +2796,172 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 //     return INF;
 // }
 
+// struct State {
+//     VI action;
+//     double score;
+//     double annealing_score;
+
+//     State(){}
+//     void initialize(const string& filename){
+//         // 初期解 ----------
+//         assert(file_exists(filename));
+//         action=load_actions(filename);
+//         dump(SZ(action))
+//         // ----------------
+//     }
+//     tuple<double, double> calc_score() {
+//         score = 0;
+//         annealing_score = 0;
+//         // スコア ----------
+//         score = get_mistakes(simulation(initial_state, action));
+//         annealing_score = score;
+//         // -----------------
+//         return {score, annealing_score};
+//     }
+// };
+
+// double annealing(const string& filename, int loop_max, int verbose){
+//     if(DEBUG) OUT("annealing");
+//     constexpr double START_TEMP = 0.1;
+//     constexpr double END_TEMP   = 0.09;
+
+//     set<VI> candidates;
+//     State state;
+//     state.initialize(filename);
+//     int maxsize=SZ(state.action);
+
+//     auto [score, annealing_score] = state.calc_score();
+//     if(DEBUG) OUT("initial score:", score, "\t", annealing_score);
+
+//     // 改善されないとき強制遷移させる間隔
+//     constexpr int FORCE_UPDATE = 10000;
+//     int no_update_times=0;
+//     REP(loop, loop_max){
+//         State backup = state;
+//         int cnt=get_rand(1, allowed_action_num);
+//         REP(_,cnt){
+//             // 操作
+//             // int op = SZ(state.action)>=maxsize? get_rand(3) : get_rand(4);
+//             int op = get_rand(2);
+//             // int i=get_rand(SZ(state.action)), j=get_rand(SZ(state.action)), a=get_rand(allowed_action_num*2);
+//             switch(op){
+//                 case 0:
+//                 {
+//                     // REP(_,cnt)
+//                     {
+//                         int i=get_rand(SZ(state.action)), j=get_rand(SZ(state.action));
+//                         swap(state.action[i], state.action[j]);
+//                     }
+//                 }
+//                 CASE 1:
+//                 {
+//                     // REP(_, cnt)
+//                     {
+//                         int i=get_rand(SZ(state.action));
+//                         state.action[i]=get_rand(allowed_action_num*2);
+//                     }
+//                 }
+//                 CASE 2:
+//                 {
+//                     // REP(_, cnt)
+//                     {
+//                         if(state.action.size()==1)break;
+//                         int i=get_rand(SZ(state.action));
+//                         state.action.erase(state.action.begin()+i);
+//                     }
+//                 }
+//                 CASE 3:
+//                 {
+//                     // REP(_, cnt)
+//                     {
+//                         if(SZ(state.action)>=maxsize)break;
+//                         int i=get_rand(SZ(state.action)), a=get_rand(allowed_action_num*2);
+//                         state.action.insert(state.action.begin()+i, a);
+//                     }
+//                 }
+//             }
+//         }
+//         const auto [current_score, current_annealing_score] = state.calc_score();
+        
+//         if (DEBUG && loop % verbose == 0){
+//             OUT(loop, "\t:", score, "\t", current_score, "\t", SZ(state.action));
+//         }
+
+//         if(current_annealing_score<=num_wildcards){
+//             int sz=SZ(candidates);
+//             state.action = cancel_opposite(state.action);
+//             candidates.emplace(state.action);
+//             if(SZ(candidates)>sz){
+//                 dump(SZ(candidates))
+//                 auto result = wildcard_finish(state.action);
+//                 // result = summerize_rotate(result, 0);
+//                 result = greedy_improve(result, 1);
+//                 result = same_state_skip(result);
+//                 result = loop_compress(result);
+//                 dump(SZ(result))
+//                 if (SZ(result)<maxsize){
+//                     OUT("saved", SZ(result));
+//                     save_actions(filename, result);
+//                     maxsize=SZ(result);
+//                 }
+//             }
+//         }
+
+//         if (current_annealing_score <= annealing_score){
+//             // 改善された場合
+//             no_update_times=0;
+//             score = current_score;
+//             annealing_score = current_annealing_score;
+//             continue;
+//         }
+//         // 改善されなかった場合
+//         ++no_update_times;
+//         if (no_update_times>=FORCE_UPDATE){
+//             // 強制遷移
+//             no_update_times=0;
+//             score = current_score;
+//             annealing_score = current_annealing_score;
+//             continue;
+//         }
+//         // 温度
+//         const double temp = START_TEMP + (END_TEMP - START_TEMP) * loop / loop_max; // 線形
+//         // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) loop / loop_max); // 指数
+//         // const double temp = START_TEMP + (END_TEMP - START_TEMP) * (double) timer.time() / TIME_LIMIT; // 線形
+//         // const double temp = START_TEMP * pow(END_TEMP/START_TEMP, (double) timer.time() / TIME_LIMIT); // 指数
+//         const double probability = exp((annealing_score-current_annealing_score) / temp);
+//         if (probability > get_rand()){
+//             // 温度による遷移
+//             score = current_score;
+//             annealing_score = current_annealing_score;
+//             continue;
+//         }
+
+//         // もとに戻す
+//         // 逆操作が難しい場合はまるごとコピーする
+//         // NOTE: 焼きなましは遷移が失敗することのほうが多いため、その場合はbackup側を変更して、成功時にstateに反映させたほうが速い
+//         state = backup;
+//         // switch(op){
+//         //     case 0:
+//         //     {
+//         //         swap(state.action[i], state.action[j]);
+//         //     }
+//         //     CASE 1:
+//         //     {
+//         //         state.action.insert(state.action.begin()+i, a);
+//         //     }
+//         //     CASE 2:
+//         //     {
+//         //         swap(state.action[i], a);
+//         //     }
+//         //     CASE 3:
+//         //     {
+//         //         state.action.erase(state.action.begin()+i);
+//         //     }
+//         // }
+//     }
+//     return maxsize;
+// }
+
 
 
 
@@ -2707,7 +2983,7 @@ map<string, int> TARGET{
        {"wreath_12/12", 12},
        {"wreath_21/21", 12},
        {"wreath_33/33", 12},
-       {"wreath_100/100", 9},
+       {"wreath_100/100", 12},
        {"globe_1/8", 4},
        {"globe_1/16", 3},
        {"globe_2/6", 4},
@@ -2729,8 +3005,13 @@ int main() {
     // for(int i: VI{200, 201, 202, 204, 205, 206, 207, 208, 209, 240, 241, 242, 243, 244, 255, 256, 283}){
     // for(int i: VI{255000, 256000, 283000}){
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
-    // for(int i: VI{283000}){
+    // for(int i: VI{388,389,390,392,393,394,396,397}){
+    // for(int i: VI{352,388,389,390,391,392,393,394,395,396,397}){
     REP(i, case_num){
+    // RREP(i, case_num){
+    // FOR(i, 330, case_num){
+    // FOR(i, 200, case_num){
+    // FOR(i, 338, case_num){
     // RREP(i, case_num){
         timer.start();
         dump(SEED)
@@ -2764,6 +3045,8 @@ int main() {
         score=compression(output_filename, TARGET[puzzle_type], 100);
         // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
         // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
+
+        // score = annealing(output_filename, INF, 100);
 
         score=check_answer(output_filename);
         timer.end();
