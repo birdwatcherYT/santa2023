@@ -705,25 +705,6 @@ VI solve_center(){
             penalty++;
         penalty/=2;
         return penalty;
-        // int row_penalty=0;
-        // FOR(i, 1, X-1){
-        //     int row=0;
-        //     FOR(j, 1, X-1){
-        //         int idx=size*panel+i*X+j;
-        //         row+=state[idx]!=solution_state[idx];
-        //     }
-        //     row_penalty+=(row!=0);
-        // }
-        // int col_penalty=0;
-        // FOR(j, 1, X-1){
-        //     int col=0;
-        //     FOR(i, 1, X-1){
-        //         int idx=size*panel+i*X+j;
-        //         col+=state[idx]!=solution_state[idx];
-        //     }
-        //     col_penalty+=(col!=0);
-        // }
-        // return max(row_penalty, col_penalty);
     };
 
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
@@ -847,6 +828,92 @@ VI solve_center(){
     }
     return all_path;
 }
+VI solve_center2(const VI& start){
+    int size=X*X;
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+
+    auto center_penalty_cumsum = [&](const VI& state, int center_num){
+        int ok_c=0;
+        REP(t, 6){
+            int row=0, col=0;
+            FOR(i, 1, X-1){
+                bool ok=true;
+                FOR(j, 1, X-1)if(ok){
+                    int idx=size*t+i*X+j;
+                    if(state[idx]!=solution_state[idx])ok=false;
+                }
+                row+=ok;
+                ok=true;
+                FOR(j, 1, X-1)if(ok){
+                    int idx=size*t+j*X+i;
+                    if(state[idx]!=solution_state[idx])ok=false;
+                }
+                col+=ok;
+            }
+            ok_c+=max(row, col);
+        }
+        return max(0, (X-2)*center_num-ok_c);
+    };
+
+
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int center_num){
+        int h=center_penalty_cumsum(state, center_num);
+        if (h==0)
+            return true;
+        // if(SZ(path) >= max_action_size) return false;
+        if(h+SZ(path) >= max_action_size) return false;
+        REP(a, allowed_action_num*2){
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            if (search(next, path, next_same_action_num, max_action_size, visit, center_num))
+                return true;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return false;
+    };
+
+
+    auto state=start;
+    VI all_path;
+    FOR(center_num, 1, 6+1){
+        FOR(max_action_size, 1, INF){
+            dump(max_action_size)
+            unordered_set<uint64_t> visit;
+            visit.emplace(zhash.hash(state));
+            VI path;
+            if(search(state, path, 0, max_action_size, visit, center_num)){
+                OUT("Find!", path, center_num);
+                state=simulation(state, path);
+                all_path.insert(all_path.end(), path.begin(), path.end());
+                break;
+            }
+        }
+    }
+    return all_path;
+}
 
 VI solve_edge(const VI& start){
     int size=X*X;
@@ -960,30 +1027,137 @@ VI solve_edge(const VI& start){
     return all_path;
 }
 
+
+VI solve_edge_correct(const VI& start){
+    int size=X*X;
+
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+
+    auto center_penalty_cumsum = [&](const VI& state, int edge_num){
+        int ok_c=0;
+        int ok_e=0;
+        REP(t, 6){
+            int row=0, col=0;
+            FOR(i, 1, X-1){
+                bool ok=true;
+                FOR(j, 1, X-1)if(ok){
+                    int idx=size*t+i*X+j;
+                    if(state[idx]!=solution_state[idx])ok=false;
+                }
+                row+=ok;
+                ok=true;
+                FOR(j, 1, X-1)if(ok){
+                    int idx=size*t+j*X+i;
+                    if(state[idx]!=solution_state[idx])ok=false;
+                }
+                col+=ok;
+            }
+            ok_c+=max(row, col);
+
+            for(int j: VI{0, X-1}){
+                bool ok=true;
+                FOR(i, 1, X-1)if(state[size*t+i*X+j]!=solution_state[size*t+i*X+j]){
+                    ok=false;break;
+                }
+                ok_e+=ok;
+                ok=true;
+                FOR(i, 1, X-1)if(state[size*t+j*X+i]!=solution_state[size*t+j*X+i]){
+                    ok=false;break;
+                }
+                ok_e+=ok;
+            }
+        }
+        return max(0, (X-2)*6-ok_c)+max(0, edge_num-ok_e);
+    };
+
+
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int edge_num){
+        int h=center_penalty_cumsum(state, edge_num);
+        if (h==0)
+            return true;
+        // if(SZ(path) >= max_action_size) return false;
+        if(h+SZ(path) >= max_action_size) return false;
+        REP(a, allowed_action_num*2){
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            if (search(next, path, next_same_action_num, max_action_size, visit, edge_num))
+                return true;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return false;
+    };
+
+
+    auto state=start;
+    VI all_path;
+    FOR(edge_num, 1, 24+1){
+        FOR(max_action_size, 1, INF){
+            dump(max_action_size)
+            unordered_set<uint64_t> visit;
+            visit.emplace(zhash.hash(state));
+            VI path;
+            if(search(state, path, 0, max_action_size, visit, edge_num)){
+                // OUT("Find!", path, target_panel);
+                OUT("Find!", path, edge_num);
+                state=simulation(state, path);
+                all_path.insert(all_path.end(), path.begin(), path.end());
+                break;
+            }
+        }
+    }
+    return all_path;
+}
+
 int cube_solver(){
-    auto center_path=solve_center();
-    dump(center_path);
-    dump(action_decode(center_path));
-
-    // 200
-    // VI center_path = { 0, 22, 2, 23, 0, 22, 15, 22, 6, 0, 0, 16, 18, 7, 7, 21, 2, 19, 2, 16, 2, 16, 2, 4, 2, 7, 14, 3, 9, 7, 21, 4, 15, 16, };
-    // // // action_decode(center_path) = f0.-d2.f2.-d3.f0.-d2.-f3.-d2.r2.f0.f0.-r0.-r2.r3.r3.-d1.f2.-r3.f2.-r0.f2.-r0.f2.r0.f2.r3.-f2.f3.d1.r3.-d1.r0.-f3.-r0
+    // // 200
+    // VI center_path{ 0, 22, 2, 23, 0, 22, 15, 22, 6, 0, 0, 16, 18, 7, 7, 21, 2, 19, 2, 16, 2, 16, 2, 4, 2, 7, 14, 3, 9, 7, 21, 4, 15, 16, };
+    // // action_decode(center_path) = f0.-d2.f2.-d3.f0.-d2.-f3.-d2.r2.f0.f0.-r0.-r2.r3.r3.-d1.f2.-r3.f2.-r0.f2.-r0.f2.r0.f2.r3.-f2.f3.d1.r3.-d1.r0.-f3.-r0
     // VI edge_path{ 12, 8, 0, 20, 15, 20, 3, 8, 3, 16, 15, 4, 5, 11, 17, 20, 14, 8, 2, 8, 1, 3, 4, 15, 16, 13, 4, 17, 12, 16, 0, 5, 11, 16, 23, 4, 3, 18, 12, 6, 0, 3, 3, 8, 3, 20, 12, 11, 0, 23, 12, 12, 8, 0, 0, 20, 12, 12, 20, 0, 14, 8, 0, 20, 2, 8, 12, 0, 11, 14, 11, 12, 23, 2, 3, 23, 15, 0, 23, 12, 11, 3, 16, 14, 4, 15, 16, 2, 4, 15, 11, 3, 23, };
-    // action_decode(edge_path) = -f0.d0.f0.-d0.-f3.-d0.f3.d0.f3.-r0.-f3.r0.r1.d3.-r1.-d0.-f2.d0.f2.d0.f1.f3.r0.-f3.-r0.-f1.r0.-r1.-f0.-r0.f0.r1.d3.-r0.-d3.r0.f3.-r2.-f0.r2.f0.f3.f3.d0.f3.-d0.-f0.d3.f0.-d3.-f0.-f0.d0.f0.f0.-d0.-f0.-f0.-d0.f0.-f2.d0.f0.-d0.f2.d0.-f0.f0.d3.-f2.d3.-f0.-d3.f2.f3.-d3.-f3.f0.-d3.-f0.d3.f3.-r0.-f2.r0.-f3.-r0.f2.r0.-f3.d3.f3.-d3
+    // // action_decode(edge_path) = -f0.d0.f0.-d0.-f3.-d0.f3.d0.f3.-r0.-f3.r0.r1.d3.-r1.-d0.-f2.d0.f2.d0.f1.f3.r0.-f3.-r0.-f1.r0.-r1.-f0.-r0.f0.r1.d3.-r0.-d3.r0.f3.-r2.-f0.r2.f0.f3.f3.d0.f3.-d0.-f0.d3.f0.-d3.-f0.-f0.d0.f0.f0.-d0.-f0.-f0.-d0.f0.-f2.d0.f0.-d0.f2.d0.-f0.f0.d3.-f2.d3.-f0.-d3.f2.f3.-d3.-f3.f0.-d3.-f0.d3.f3.-r0.-f2.r0.-f3.-r0.f2.r0.-f3.d3.f3.-d3
+    // VI edge_path{8, 12, 20, 0, 19, 15, 7, 3, 4, 0, 16, 12, 3, 4, 15, 16, 19, 8, 7, 20, 1, 8, 13, 14, 16, 2, 15, 4, 3, 16, 7, 0, 19, 8, 12, 20, 7, 7, 3, 19, 15, 19, 12, 1, 19, 0, 7, 13, 11, 0, 23, 12, 6, 6, 11, 6, 6, 3, 4, 3, 3, 16, 3, 3, 4, 8, 16, 3, 20, 15, 8, 15, 20, 23, 15, 11, 3, 12, 11, 16, 0, 4, 12, 23, 0, 16, 9, 12, 21, 4, 9, 0, 21, 12, 9, 3, 21, 0, 9, 15, 21, 3, 8, 6, 3, 18, 20, 6, 15, 18, 15, 15, 10, 0, 22, 3, 10, 12, 22, 5, 11, 17, 8, 4, 20, 4, 12, 16, 0, 16, 5, 23, 17, 21, 15, 9, 18, 0, 6, 21, 3, 9, 18, 12, 6, };
+    // action_decode(edge_path) = d0.-f0.-d0.f0.-r3.-f3.r3.f3.r0.f0.-r0.-f0.f3.r0.-f3.-r0.-r3.d0.r3.-d0.f1.d0.-f1.-f2.-r0.f2.-f3.r0.f3.-r0.r3.f0.-r3.d0.-f0.-d0.r3.r3.f3.-r3.-f3.-r3.-f0.f1.-r3.f0.r3.-f1.d3.f0.-d3.-f0.r2.r2.d3.r2.r2.f3.r0.f3.f3.-r0.f3.f3.r0.d0.-r0.f3.-d0.-f3.d0.-f3.-d0.-d3.-f3.d3.f3.-f0.d3.-r0.f0.r0.-f0.-d3.f0.-r0.d1.-f0.-d1.r0.d1.f0.-d1.-f0.d1.f3.-d1.f0.d1.-f3.-d1.f3.d0.r2.f3.-r2.-d0.r2.-f3.-r2.-f3.-f3.d2.f0.-d2.f3.d2.-f0.-d2.r1.d3.-r1.d0.r0.-d0.r0.-f0.-r0.f0.-r0.r1.-d3.-r1.-d1.-f3.d1.-r2.f0.r2.-d1.f3.d1.-r2.-f0.r2
 
-    // 200
-    // VI center_path{ 15, 10, 10, 15, 2, 8, 13, 10, 4, 5, 3, 17, 22, 4, 4, 11, 6, 11, 14, 7, 2, 18, 0, 11, 0, 19, 9, 12, 21, 0, 0, 7, 12, };
-    // action_decode(center_path) = -f3.d2.d2.-f3.f2.d0.-f1.d2.r0.r1.f3.-r1.-d2.r0.r0.d3.r2.d3.-f2.r3.f2.-r2.f0.d3.f0.-r3.d1.-f0.-d1.f0.f0.r3.-f0
-
-    // 205
+    // // 205
     // // Find! [ 1, 16, 1, 4, 13, 16, 13, 23, 1, 4, 11, 13, ] [ 3, 2, 1, 5, 4, 0, ]
     // VI center_path{ 2, 4, 13, 5, 6, 1, 1, 2, 16, 10, 4, 22, 0, 8, 10, 0, 22, 5, 0, 17, 1, 7, 1, 8, 8, 23, 13, 19, 13, 2, 11, 14, 7, 1, 11, 13, 1, 16, 1, 4, 13, 16, 13, 23, 1, 4, 11, 13, };
     // // action_decode(center_path) = f2.r0.-f1.r1.r2.f1.f1.f2.-r0.d2.r0.-d2.f0.d0.d2.f0.-d2.r1.f0.-r1.f1.r3.f1.d0.d0.-d3.-f1.-r3.-f1.f2.d3.-f2.r3.f1.d3.-f1.f1.-r0.f1.r0.-f1.-r0.-f1.-d3.f1.r0.d3.-f1
     // VI edge_path{ 6, 3, 8, 15, 20, 18, 4, 20, 16, 8, 21, 16, 0, 4, 12, 9, 4, 11, 16, 23, 10, 3, 16, 15, 4, 22, 0, 8, 12, 20, 8, 15, 20, 19, 3, 7, 9, 0, 4, 12, 16, 21, 11, 16, 9, 19, 23, 7, 21, 0, 4, 12, 23, 16, 11, 4, 9, 4, 0, 16, 12, 21, 10, 10, 19, 0, 7, 12, 10, 10, 12, 23, 0, 22, 0, 11, 12, 10, 4, 3, 16, 15, 10, 4, 23, 16, 9, 11, 12, 21, 22, 0, 19, 8, 12, 20, 3, 19, 15, 8, 7, 20, 8, 7, 20, 19, };
     // // action_decode(edge_path) = r2.f3.d0.-f3.-d0.-r2.r0.-d0.-r0.d0.-d1.-r0.f0.r0.-f0.d1.r0.d3.-r0.-d3.d2.f3.-r0.-f3.r0.-d2.f0.d0.-f0.-d0.d0.-f3.-d0.-r3.f3.r3.d1.f0.r0.-f0.-r0.-d1.d3.-r0.d1.-r3.-d3.r3.-d1.f0.r0.-f0.-d3.-r0.d3.r0.d1.r0.f0.-r0.-f0.-d1.d2.d2.-r3.f0.r3.-f0.d2.d2.-f0.-d3.f0.-d2.f0.d3.-f0.d2.r0.f3.-r0.-f3.d2.r0.-d3.-r0.d1.d3.-f0.-d1.-d2.f0.-r3.d0.-f0.-d0.f3.-r3.-f3.d0.r3.-d0.d0.r3.-d0.-r3
+    // center_path = [ 7, 10, 0, 7, 21, 12, 5, 15, 5, 11, 11, 5, 5, 8, 5, 8, 0, 4, 20, 6, 1, 8, 16, 18, 8, 12, 5, 3, 3, 9, 3, 21, 4, 17, 0, 16, 12, 9, 16, 21, 0, 10, 16, 22, 4, ]
+    // action_decode(center_path) = r3.d2.f0.r3.-d1.-f0.r1.-f3.r1.d3.d3.r1.r1.d0.r1.d0.f0.r0.-d0.r2.f1.d0.-r0.-r2.d0.-f0.r1.f3.f3.d1.f3.-d1.r0.-r1.f0.-r0.-f0.d1.-r0.-d1.f0.d2.-r0.-d2.r0
+
+
+    // auto center_path=solve_center();
+    auto center_path=solve_center2(initial_state);
+    dump(center_path);
+    dump(action_decode(center_path));
 
     auto state=simulation(initial_state, center_path);
-    auto edge_path=solve_edge(state);
+    // auto edge_path=solve_edge(state);
+    auto edge_path=solve_edge_correct(state);
     dump(edge_path);
     dump(action_decode(edge_path));
     return INF;
@@ -1026,9 +1200,10 @@ int main() {
     double sum_log_score = 0.0;
     int64_t max_time = 0;
     // REP(i, case_num){
-    // FOR(i, 205, 210){
-    FOR(i, 205+1, 210){
     // FOR(i, 200, 210){
+    FOR(i, 205, 210){
+    // FOR(i, 200, 205){
+    // RFOR(i, 205, 210){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
