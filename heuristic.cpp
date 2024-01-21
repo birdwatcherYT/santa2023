@@ -2052,32 +2052,91 @@ VI kstep_replace(const VI &action, int k){
     }
 
     VI result;
-    for(int i=0;i<SZ(action);){
-        // dump(i)
-        auto prev=to_shortest.begin();
+    // for(int i=0;i<SZ(action);){
+    for(int i=0;i<SZ(action);++i){
+        if(i%100==0)dump(i);
+        // auto prev=to_shortest.begin();
         ARANGE(index);
+        bool update=false;
         FOR(j, i, SZ(action)){
             index=do_action(index, action[j]);
             auto it=to_shortest.find(zhash.hash(index));
-            if(it==to_shortest.end()){
-                int length=j-i;
-                if(length>get<0>(prev->second)){
-                    OUT("update", length, "->", get<0>(prev->second));
-                    auto path=construct_actions(0, prev->first, to_shortest);
+            // if(it==to_shortest.end()){
+            //     int length=j-i;
+            //     if(length>get<0>(prev->second)){
+            //         OUT("update", length, "->", get<0>(prev->second));
+            //         auto path=construct_actions(0, prev->first, to_shortest);
+            //         result.insert(result.end(), path.begin(), path.end());
+            //         i=j;
+            //     }else{
+            //         result.emplace_back(action[i]);
+            //         i++;
+            //     }
+            //     break;
+            // }else if(j==SZ(action)-1){
+            //     auto path=construct_actions(0, it->first, to_shortest);
+            //     result.insert(result.end(), path.begin(), path.end());
+            //     i=SZ(action);
+            // }
+            // prev=it;
+            if(it!=to_shortest.end()){
+                int length=j-i+1;
+                if(length>get<0>(it->second)){
+                    OUT("update", length, "->", get<0>(it->second));
+                    auto path=construct_actions(0, it->first, to_shortest);
                     result.insert(result.end(), path.begin(), path.end());
                     i=j;
-                }else{
-                    result.emplace_back(action[i]);
-                    i++;
+                    update=true;
+                    break;
+                }else if(length==get<0>(it->second)){
+                    auto path=construct_actions(0, it->first, to_shortest);
+                    bool same=true;
+                    REP(k, length)if(get_group_id(action[i+k])!=get_group_id(action[path[k]]))
+                        same=false;
+                    if(!same){
+                        // OUT("another group expression");
+                        if(i!=0 && get_group_id(action[i-1])==get_group_id(path.front())){
+                            auto tmp=result;
+                            tmp.insert(tmp.end(), path.begin(), path.end());
+                            int sz=SZ(tmp);
+                            tmp = cancel_opposite(tmp);
+                            if(SZ(tmp)<sz){
+                                OUT("update");
+                                result=tmp;
+                                i=j;
+                                update=true;
+                                break;
+                            }
+                        }
+                        if(j+1<SZ(action) && get_group_id(path.back())!=get_group_id(action[j]) && get_group_id(path.back())==get_group_id(action[j+1])){
+                            auto tmp=result;
+                            tmp.insert(tmp.end(), path.begin(), path.end());
+                            int k=j+1;
+                            for(; k<SZ(action); ++k){
+                                if(get_group_id(path.back())!=get_group_id(action[k])){
+                                    k--;
+                                    break;
+                                }
+                                tmp.emplace_back(action[k]);
+                            }
+                            int sz=SZ(tmp);
+                            tmp = cancel_opposite(tmp);
+                            if(SZ(tmp)<sz){
+                                OUT("update");
+                                result=tmp;
+                                i=k;
+                                update=true;
+                                break;
+                            }
+                        }
+                    }
+
                 }
+            }else
                 break;
-            }else if(j==SZ(action)-1){
-                auto path=construct_actions(0, it->first, to_shortest);
-                result.insert(result.end(), path.begin(), path.end());
-                i=SZ(action);
-            }
-            prev=it;
         }
+        if(!update)
+            result.emplace_back(action[i]);
     }
     return result;
 }
@@ -2492,6 +2551,7 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
                     tmp.insert(tmp.end(), a2.begin(), a2.end());
                     tmp.insert(tmp.end(), a1.begin(), a1.end());
                     int j;
+                    // TODO: グループIDが同じものでよいのか確認
                     for(j=i+len1+len2; j<SZ(actions) && g1_back==get_group_id(actions[j]); ++j)
                         tmp.emplace_back(actions[j]);
                     int sz=SZ(tmp);
@@ -2531,6 +2591,105 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
     return result;
 }
 
+// TODO: 同じ問題タイプをすべて使う
+// 解の系列の中で存在するより短い別表現に置き換える
+VI shorter_subactions(const VI& actions){
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    VI index(state_length);
+    // hash -> [start, end]
+    unordered_map<uint64_t,PII> shortest;
+    bool updatable=false;
+    REP(i, SZ(actions)){
+        if(i%100==0)dump(i);
+        ARANGE(index);
+        FOR(j, i, SZ(actions)){
+            index=do_action(index, actions[j]);
+            auto hash=zhash.hash(index);
+            if(!shortest.contains(hash))
+                shortest[hash]={i, j};
+            else{
+                auto &[pi,pj]=shortest[hash];
+                if(pj-pi>j-i){
+                    pi=i, pj=j;
+                    updatable=true;
+                    OUT("updatable");
+                }else if(pj-pi==j-i){
+                    bool same=true;
+                    for(int k1=pi, k2=i;same && k1<=pj && k2<=j; ++k1, ++k2)if(get_group_id(actions[k1])!=get_group_id(actions[k2]))
+                        same=false;
+                    if(!same){ 
+                        OUT("another group expression");
+                        updatable=true;
+                    }
+                }
+            }
+        }
+    }
+    if(!updatable)return actions;
+    VI result;
+    REP(i, SZ(actions)){
+        if(i%100==0)dump(i);
+        ARANGE(index);
+        bool update=false;
+        FOR(j, i, SZ(actions)){
+            index=do_action(index, actions[j]);
+            auto hash=zhash.hash(index);
+            auto [pi,pj]=shortest[hash];
+            if(pj-pi<j-i){
+                OUT("update", (j-i)-(pj-pi));
+                result.insert(result.end(), actions.begin()+pi, actions.begin()+pj+1);
+                i=j;
+                update=true;
+                break;
+            }else if(pj-pi==j-i){
+                bool same=true;
+                for(int k1=pi, k2=i;same && k1<=pj && k2<=j; ++k1, ++k2)if(get_group_id(actions[k1])!=get_group_id(actions[k2]))
+                    same=false;
+                if(!same){
+                    OUT("another group expression");
+                    if(i!=0 && get_group_id(actions[i-1])==get_group_id(actions[pi])){
+                        auto tmp=result;
+                        tmp.insert(tmp.end(), actions.begin()+pi, actions.begin()+pj+1);
+                        int sz=SZ(tmp);
+                        tmp = cancel_opposite(tmp);
+                        if(SZ(tmp)<sz){
+                            OUT("update");
+                            result=tmp;
+                            i=j;
+                            update=true;
+                            break;
+                        }
+                    }
+                    if(j+1<SZ(actions) && get_group_id(actions[pj])!=get_group_id(actions[j]) && get_group_id(actions[pj])==get_group_id(actions[j+1])){
+                        auto tmp=result;
+                        tmp.insert(tmp.end(), actions.begin()+pi, actions.begin()+pj+1);
+                        int k=j+1;
+                        for(; k<SZ(actions); ++k){
+                            if(get_group_id(actions[pj])!=get_group_id(actions[k])){
+                                --k;
+                                break;
+                            }
+                            tmp.emplace_back(actions[k]);
+                        }
+                        int sz=SZ(tmp);
+                        tmp = cancel_opposite(tmp);
+                        if(SZ(tmp)<sz){
+                            OUT("update");
+                            result=tmp;
+                            i=k;
+                            update=true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if(!update){
+            result.emplace_back(actions[i]);
+        }
+    }
+    return result;
+}
 
 // 解の圧縮
 int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
@@ -2540,22 +2699,24 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     dump(SZ(actions))
 
     auto result = actions;
+    // result=shorter_subactions(result);
     // result = find_swap(result, 100, false);
-    // result = find_swap(result, 10, true);
+    result = find_swap(result, 50, false);
+    // // result = find_swap(result, 10, true);
     // result=rotate_skip(result);
-    // result = wildcard_finish(result);
-    // result = cancel_opposite(result);
+    result = wildcard_finish(result);
+    result = cancel_opposite(result);
     // result = kstep_replace(result, depth);
-    // result = kstep_replace(result, depth, true);
-    // result = kstep_replace(result, depth, false);
+    // // result = kstep_replace(result, depth, true);
+    // // result = kstep_replace(result, depth, false);
     // result=summerize_rotate(result, 0);
     // result=summerize_rotate(result, 1);
-    // result=summerize_rotate(result, -1);
+    // // result=summerize_rotate(result, -1);
     // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
-    // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
-    // result = greedy_improve(result, depth);
-    // result = same_state_skip(result);
-    // result = loop_compress(result);
+    // // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
+    // // result = greedy_improve(result, depth);
+    result = same_state_skip(result);
+    result = loop_compress(result);
 
     int mistake = get_mistakes(simulation(initial_state, result));
     assert(mistake<=num_wildcards);
@@ -3007,8 +3168,12 @@ int main() {
     // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
     // for(int i: VI{388,389,390,392,393,394,396,397}){
     // for(int i: VI{352,388,389,390,391,392,393,394,395,396,397}){
-    REP(i, case_num){
+    // REP(i, case_num){
     // RREP(i, case_num){
+    REP(_,100)
+    for(int i: VI{281}){
+    // for(int i: VI{282}){
+    // FOR(i, 205, 210){
     // FOR(i, 330, case_num){
     // FOR(i, 200, case_num){
     // FOR(i, 338, case_num){
