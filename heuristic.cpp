@@ -2704,8 +2704,8 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
     result = find_swap(result, 50, false);
     // // result = find_swap(result, 10, true);
     // result=rotate_skip(result);
-    result = wildcard_finish(result);
-    result = cancel_opposite(result);
+    // result = wildcard_finish(result);
+    // result = cancel_opposite(result);
     // result = kstep_replace(result, depth);
     // // result = kstep_replace(result, depth, true);
     // // result = kstep_replace(result, depth, false);
@@ -3171,8 +3171,7 @@ int main() {
     // REP(i, case_num){
     // RREP(i, case_num){
     REP(_,100)
-    for(int i: VI{281}){
-    // for(int i: VI{282}){
+    for(int i: VI{277,278,279,280,281,282}){
     // FOR(i, 205, 210){
     // FOR(i, 330, case_num){
     // FOR(i, 200, case_num){

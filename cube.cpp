@@ -702,9 +702,9 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 
 // VI solve_center(){
 //     int size=X*X;
-//     auto center_penalty = [&](int panel, const VI& state){
+//     auto center_penalty = [&](int panel, const VI& state, int intercept){
 //         int penalty=0;
-//         FOR(i, 1, X-1)FOR(j, 1, X-1){
+//         FOR(i, intercept, X-intercept)FOR(j, intercept, X-intercept){
 //             int idx=size*panel+i*X+j;
 //             penalty+=state[idx]!=solution_state[idx];
 //         }
@@ -718,16 +718,16 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 
 //     VI target_panel;
 //     SI target_label;
-//     auto center_penalty_cumsum = [&](const VI& state){
+//     auto center_penalty_cumsum = [&](const VI& state, int intercept){
 //         int penalty=0;
 //         for(int t: target_panel)
-//             penalty+=center_penalty(t, state);
+//             penalty+=center_penalty(t, state, intercept);
 //         return penalty;
 //     };
 
-//     function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &)> search;
-//     search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit){
-//         int h=center_penalty_cumsum(state);
+//     function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int)> search;
+//     search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int intercept){
+//         int h=center_penalty_cumsum(state, intercept);
 //         if (h==0)
 //             return true;
 //         // if(SZ(path) >= max_action_size) return false;
@@ -756,7 +756,7 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 //                 continue;
 //             visit.emplace(next_hash);
 //             path.emplace_back(a);
-//             if (search(next, path, next_same_action_num, max_action_size, visit))
+//             if (search(next, path, next_same_action_num, max_action_size, visit, intercept))
 //                 return true;
 //             path.pop_back();
 //             visit.erase(next_hash);
@@ -769,31 +769,27 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 //     VI all_path;
 //     VI panels{0,5, 1,2, 4,3};
 //     shuffle(ALL(panels), rand_engine);
-//     // VI panels{0,5, 1,3, 2,4};
-//     // for(auto [panel1,panel2]: vector<PII>{{0,5}, {1,3}, {2,4}}){
-//     for(auto panel: panels){
-//         target_panel.emplace_back(panel);
-//         // target_panel.emplace_back(panel1);
-//         // target_panel.emplace_back(panel2);
-        
-//         // for(int panel: VI{panel1, panel2})
-//         {
-//             FOR(i, 1, X-1)FOR(j, 1, X-1){
+//     RFOR(intercept, 1, X/2){
+//         for(auto panel: panels){
+//             target_panel.emplace_back(panel);
+
+//             dump(intercept)
+//             FOR(i, intercept, X-intercept)FOR(j, intercept, X-intercept){
 //                 int idx=size*panel+i*X+j;
 //                 target_label.emplace(solution_state[idx]);
 //             }
-//         }
-
-//         FOR(max_action_size, 1, INF){
-//             dump(max_action_size)
-//             unordered_set<uint64_t> visit;
-//             visit.emplace(zhash.hash(state, target_label));
-//             VI path;
-//             if(search(state, path, 0, max_action_size, visit)){
-//                 OUT("Find!", path, target_panel);
-//                 state=simulation(state, path);
-//                 all_path.insert(all_path.end(), path.begin(), path.end());
-//                 break;
+//             FOR(max_action_size, 1, INF){
+//                 dump(max_action_size)
+//                 unordered_set<uint64_t> visit;
+//                 visit.emplace(zhash.hash(state, target_label));
+//                 VI path;
+//                 if(search(state, path, 0, max_action_size, visit, intercept)){
+//                     OUT("Find!", path, target_panel);
+//                     dump(action_decode(path))
+//                     state=simulation(state, path);
+//                     all_path.insert(all_path.end(), path.begin(), path.end());
+//                     break;
+//                 }
 //             }
 //         }
 //         // // hash -> {prev_hash, action_id}
@@ -840,19 +836,21 @@ VI solve_center2(const VI& start){
     int size=X*X;
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
 
-    auto center_penalty_cumsum = [&](const VI& state, int center_num){
+    SI target_label;
+
+    auto center_penalty_cumsum = [&](const VI& state, int center_num, int intercept){
         int ok_c=0;
         REP(t, 6){
             int row=0, col=0;
-            FOR(i, 1, X-1){
+            FOR(i, intercept, X-intercept){
                 bool ok=true;
-                FOR(j, 1, X-1)if(ok){
+                FOR(j, intercept, X-intercept)if(ok){
                     int idx=size*t+i*X+j;
                     if(state[idx]!=solution_state[idx])ok=false;
                 }
                 row+=ok;
                 ok=true;
-                FOR(j, 1, X-1)if(ok){
+                FOR(j, intercept, X-intercept)if(ok){
                     int idx=size*t+j*X+i;
                     if(state[idx]!=solution_state[idx])ok=false;
                 }
@@ -860,16 +858,16 @@ VI solve_center2(const VI& start){
             }
             ok_c+=max(row, col);
         }
-        return max(0, (X-2)*center_num-ok_c);
+        return max(0, (X-2*intercept)*center_num-ok_c);
     };
 
     VI allowed(allowed_action_num*2);
     ARANGE(allowed);
     shuffle(ALL(allowed), rand_engine);
 
-    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int)> search;
-    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int center_num){
-        int h=center_penalty_cumsum(state, center_num);
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int, int)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int center_num, int intercept){
+        int h=center_penalty_cumsum(state, center_num, intercept);
         if (h==0)
             return true;
         // if(SZ(path) >= max_action_size) return false;
@@ -894,12 +892,12 @@ VI solve_center2(const VI& start){
                     continue;
             }
             auto next=do_action(state, a);
-            auto next_hash=zhash.hash(next);
+            auto next_hash=zhash.hash(next, target_label);
             if (visit.contains(next_hash))
                 continue;
             visit.emplace(next_hash);
             path.emplace_back(a);
-            if (search(next, path, next_same_action_num, max_action_size, visit, center_num))
+            if (search(next, path, next_same_action_num, max_action_size, visit, center_num, intercept))
                 return true;
             path.pop_back();
             visit.erase(next_hash);
@@ -910,23 +908,283 @@ VI solve_center2(const VI& start){
 
     auto state=start;
     VI all_path;
-    FOR(center_num, 1, 6+1){
-        FOR(max_action_size, 1, INF){
-            dump(max_action_size)
-            unordered_set<uint64_t> visit;
-            visit.emplace(zhash.hash(state));
-            VI path;
-            if(search(state, path, 0, max_action_size, visit, center_num)){
-                OUT("Find!", path, center_num);
-                dump(action_decode(path))
-                state=simulation(state, path);
-                all_path.insert(all_path.end(), path.begin(), path.end());
-                break;
+    RREP(intercept, X/2){
+        dump(intercept)
+        REP(t, 6){
+            FOR(i, intercept, X-intercept){
+                FOR(j, intercept, X-intercept){
+                    target_label.emplace(solution_state[size*t+i*X+j]);
+                }
             }
         }
+        FOR(center_num, 1, 6+1){
+            FOR(max_action_size, 1, INF){
+                dump(max_action_size)
+                unordered_set<uint64_t> visit;
+                visit.emplace(zhash.hash(state, target_label));
+                VI path;
+                if(search(state, path, 0, max_action_size, visit, center_num, intercept)){
+                    OUT("Find!", path, center_num);
+                    dump(action_decode(path))
+                    state=simulation(state, path);
+                    all_path.insert(all_path.end(), path.begin(), path.end());
+                    break;
+                }
+            }
+        }
+        // break;
+        break;
     }
     return all_path;
 }
+
+VI solve_center_corner(const VI& start){
+    int size=X*X;
+    
+    ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+
+    SI target_label;
+    VVI rotated_panel;
+    rotated_panel.emplace_back(solution_state);
+    REP(r,3){
+        auto state=solution_state;
+        auto &prev=rotated_panel.back();
+        REP(t, 6)REP(i,X)REP(j,X){
+            state[size*t+j*X+i]=prev[size*t+(X-1-i)*X+j];
+        }
+        rotated_panel.emplace_back(state);
+    }
+
+    // auto center_penalty_cumsum = [&](const VI& state, int center_num, int intercept){
+    //     int penalty=0;
+    //     FOR(inter, intercept, X/2){
+    //         int ok_c=0;
+    //         REP(t, 6){
+    //             int row=0, col=0;
+    //             FOR(i, inter, X-inter){
+    //                 bool ok=true;
+    //                 FOR(j, inter, X-inter)if(ok){
+    //                     int idx=size*t+i*X+j;
+    //                     if(state[idx]!=solution_state[idx])ok=false;
+    //                 }
+    //                 row+=ok;
+    //                 ok=true;
+    //                 FOR(j, inter, X-inter)if(ok){
+    //                     int idx=size*t+j*X+i;
+    //                     if(state[idx]!=solution_state[idx])ok=false;
+    //                 }
+    //                 col+=ok;
+    //             }
+    //             ok_c+=max(row, col);
+    //         }
+    //         penalty+=max(0, (X-2*inter)*center_num-ok_c);
+    //     }
+    //     return penalty;
+    // };
+    // auto center_penalty_cumsum = [&](const VI& state, int center_num, int intercept){
+    //     int corner=0;
+    //     int ok_c=0;
+    //     REP(t, 6){
+    //         int row=0, col=0;
+    //         FOR(i, intercept, X-intercept){
+    //             bool ok=true;
+    //             FOR(j, intercept, X-intercept)if(ok){
+    //                 int idx=size*t+i*X+j;
+    //                 if(state[idx]!=solution_state[idx])ok=false;
+    //             }
+    //             row+=ok;
+    //             ok=true;
+    //             FOR(j, intercept, X-intercept)if(ok){
+    //                 int idx=size*t+j*X+i;
+    //                 if(state[idx]!=solution_state[idx])ok=false;
+    //             }
+    //             col+=ok;
+    //         }
+    //         ok_c+=max(row, col);
+    //         // 
+    //         for(int i: VI{1, X-1})for(int j: VI{1, X-1}){
+    //             int idx=size*t+i*X+j;
+    //             if(state[idx]==solution_state[idx])
+    //                 corner++;
+    //         }
+    //     }
+    //     return max(0, (X-2*intercept)*center_num-ok_c)+max(0, 4*center_num-corner);
+    // };
+    auto center_penalty_cumsum = [&](const VI& state, int edge_num, int intercept){
+        // int corner=0;
+        int edge=0;
+        // int ok_c=0;
+        REP(t, 6){
+            // int row=0, col=0;
+            // center
+            // for(int i:VI{X/2-1, X/2}){
+            //     bool ok=true;
+            //     for(int j:VI{X/2-1, X/2})if(ok){
+            //         int idx=size*t+i*X+j;
+            //         if(state[idx]!=solution_state[idx])ok=false;
+            //     }
+            //     row+=ok;
+            //     ok=true;
+            //     for(int j:VI{X/2-1, X/2})if(ok){
+            //         int idx=size*t+j*X+i;
+            //         if(state[idx]!=solution_state[idx])ok=false;
+            //     }
+            //     col+=ok;
+            // }
+            // ok_c+=max(row, col);
+            // 
+            // for(int i: VI{1, X-1})for(int j: VI{1, X-1}){
+            //     int idx=size*t+i*X+j;
+            //     if(state[idx]==solution_state[idx])
+            //         corner++;
+            // }
+            //
+            FOR(inter, intercept, X/2){
+                // int row=0, col=0;
+                // for(int i:VI{X/2-1, X/2}){
+                //     bool ok=true;
+                //     for(int j: VI{inter, X-1-inter})if(ok){
+                //         int idx=size*t+i*X+j;
+                //         if(state[idx]!=solution_state[idx])ok=false;
+                //     }
+                //     row+=ok;
+
+                //     ok=true;
+                //     for(int j: VI{inter, X-1-inter})if(ok){
+                //         int idx=size*t+j*X+i;
+                //         if(state[idx]!=solution_state[idx])ok=false;
+                //     }
+                //     col+=ok;
+                // }
+                // edge+=(row + col);
+                int emax=0;
+                for(auto & target: rotated_panel){
+                    int e=0;
+                    for(int j: VI{inter, X-1-inter}){
+                        bool ok=true;
+                        for(int i:VI{X/2-1, X/2})if(ok){
+                            int idx=size*t+i*X+j;
+                            if(state[idx]!=target[idx])ok=false;
+                        }
+                        e+=ok;
+                    }
+                    for(int i: VI{inter, X-1-inter}){
+                        bool ok=true;
+                        for(int j:VI{X/2-1, X/2})if(ok){
+                            int idx=size*t+i*X+j;
+                            if(state[idx]!=target[idx])ok=false;
+                        }
+                        e+=ok;
+                    }
+                    // for(int j: VI{inter, X-1-inter}){
+                    //     for(int i:VI{X/2-1, X/2}){
+                    //         int idx=size*t+i*X+j;
+                    //         if(state[idx]==target[idx])e++;
+                    //     }
+                    // }
+                    // for(int i: VI{inter, X-1-inter}){
+                    //     for(int j:VI{X/2-1, X/2}){
+                    //         int idx=size*t+i*X+j;
+                    //         if(state[idx]==target[idx])e++;
+                    //     }
+                    // }
+                    emax=max(emax,e);
+                }
+                edge+=emax;
+            }
+        }
+        return max(0, edge_num-edge);
+    };
+
+    VI allowed(allowed_action_num*2);
+    ARANGE(allowed);
+    shuffle(ALL(allowed), rand_engine);
+
+    function<bool(const VI &, VI &, int, int, unordered_set<uint64_t> &, int, int)> search;
+    search=[&](const VI &state, VI &path, int same_action_num, int max_action_size, unordered_set<uint64_t> &visit, int edge_num, int intercept){
+        int h=center_penalty_cumsum(state, edge_num, intercept);
+        if (h==0)
+            return true;
+        // if(SZ(path) >= max_action_size) return false;
+        if(h+SZ(path) >= max_action_size) return false;
+        // REP(a, allowed_action_num*2){
+        for(int a : allowed){
+            int next_same_action_num=1;
+            if(!path.empty()){
+                // 逆操作
+                if(a+allowed_action_num==path.back() || a==path.back()+allowed_action_num)
+                    continue;
+                // グループ順序
+                int prev=(path.back()<allowed_action_num) ? path.back() : (path.back()-allowed_action_num);
+                int act=(a<allowed_action_num) ? a : (a-allowed_action_num);
+                if(to_group_id[prev]==to_group_id[act] && to_order_in_group[prev]>to_order_in_group[act])
+                    continue;
+                // より短い別の動作で置換できる場合
+                if(path.back()==a)
+                    next_same_action_num = same_action_num+1;
+                if(2*next_same_action_num>to_rotate_num[act] 
+                    || (2*next_same_action_num==to_rotate_num[act] && act!=a))
+                    continue;
+            }
+            auto next=do_action(state, a);
+            auto next_hash=zhash.hash(next, target_label);
+            if (visit.contains(next_hash))
+                continue;
+            visit.emplace(next_hash);
+            path.emplace_back(a);
+            if (search(next, path, next_same_action_num, max_action_size, visit, edge_num, intercept))
+                return true;
+            path.pop_back();
+            visit.erase(next_hash);
+        }
+        return false;
+    };
+
+
+    auto state=start;
+    VI all_path;
+    int total_edge_num=0;
+    RREP(intercept, X/2){
+        dump(intercept)
+        // REP(t, 6){
+        //     FOR(i, intercept, X-intercept){
+        //         FOR(j, intercept, X-intercept){
+        //             target_label.emplace(solution_state[size*t+i*X+j]);
+        //         }
+        //     }
+        //     for(int i: VI{1, X-1})for(int j: VI{1, X-1})
+        //         target_label.emplace(solution_state[size*t+i*X+j]);
+        // }
+        REP(t,6)
+        for(int i:VI{X/2-1, X/2}){
+            for(int j: VI{intercept, X-1-intercept}){
+                target_label.emplace(solution_state[size*t+i*X+j]);
+                target_label.emplace(solution_state[size*t+j*X+i]);
+            }
+        }
+        REP(edge_loop, 4*6){
+        // REP(point_loop, 8*6){
+            total_edge_num++;
+            FOR(max_action_size, 1, INF){
+                dump(max_action_size)
+                unordered_set<uint64_t> visit;
+                visit.emplace(zhash.hash(state, target_label));
+                VI path;
+                if(search(state, path, 0, max_action_size, visit, total_edge_num, intercept)){
+                    OUT("Find!", path, total_edge_num);
+                    dump(action_decode(path))
+                    state=simulation(state, path);
+                    all_path.insert(all_path.end(), path.begin(), path.end());
+                    dump(action_decode(all_path))
+                    break;
+                }
+            }
+        }
+        // break;
+    }
+    return all_path;
+}
+
 
 // VI solve_edge(const VI& start){
 //     int size=X*X;
@@ -1045,6 +1303,17 @@ VI solve_edge_correct(const VI& start){
     int size=X*X;
 
     ZobristHashing<uint64_t> zhash(SZ(label_mapping), state_length, rand_engine);
+    SI target_label;
+    REP(t, 6){
+        FOR(i, 1, X-1)FOR(j, 1, X-1)
+            target_label.emplace(solution_state[size*t+i*X+j]);
+        for(int j: VI{0, X-1}){
+            FOR(i, 1, X-1){
+                target_label.emplace(solution_state[size*t+i*X+j]);
+                target_label.emplace(solution_state[size*t+j*X+i]);
+            }
+        }
+    }
 
     auto center_penalty_cumsum = [&](const VI& state, int edge_num){
         int ok_c=0;
@@ -1115,7 +1384,7 @@ VI solve_edge_correct(const VI& start){
                     continue;
             }
             auto next=do_action(state, a);
-            auto next_hash=zhash.hash(next);
+            auto next_hash=zhash.hash(next, target_label);
             if (visit.contains(next_hash))
                 continue;
             visit.emplace(next_hash);
@@ -1135,7 +1404,7 @@ VI solve_edge_correct(const VI& start){
         FOR(max_action_size, 1, INF){
             dump(max_action_size)
             unordered_set<uint64_t> visit;
-            visit.emplace(zhash.hash(state));
+            visit.emplace(zhash.hash(state, target_label));
             VI path;
             if(search(state, path, 0, max_action_size, visit, edge_num)){
                 // OUT("Find!", path, target_panel);
@@ -1152,17 +1421,356 @@ VI solve_edge_correct(const VI& start){
 
 int cube_solver(){
     // auto center_path=solve_center();
-    auto center_path=solve_center2(initial_state);
+    // auto state=simulation(initial_state, action_encode("f3.r2.-d3.-f5.r5.d3.r0.-r5.-d3.f0.-r0.d0.-f2.-d3.f2.r0.-f5.d0.f5.r2.d0.d0.-r2.-d3.f5.d3.f5.r5.d3.f2.-r5.d3.d3.-f2.d3.f2.r5.-f2.-r5.r5.d5.f2.-d5.-f2.d5.f3.-d5.-f3.-d5"));
+    auto state=simulation(initial_state, action_encode("-d2.-f3.d2.-f5.-d3.f2.-d3.-f3.-d3.-d2.-r2.d0.d0.r2.d2.-r0.-d2.f0.f5.f5.d2.-d3.-r0.-r5.d3.-r0.-f3.-d3.r0.d3.f3.r0.-f5.r2.-f5.-r2.f5.-f3.r0.-f3.-r2.-f0.r2.f3.-r0.f3.-r2.f0.r2"));
+    // auto center_path=solve_center2(initial_state);
+    auto center_path=solve_center_corner(state);
     dump(center_path);
     dump(action_decode(center_path));
 
-    auto state=simulation(initial_state, center_path);
+    // auto state=simulation(initial_state, center_path);
+    state=simulation(state, center_path);
     // auto edge_path=solve_edge(state);
     auto edge_path=solve_edge_correct(state);
     dump(edge_path);
     dump(action_decode(edge_path));
     return INF;
 }
+
+
+
+
+// センターを揃える
+VVI get_magic4_1(){
+    // r2.d5.-r2
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1: VI{0, 1}){
+        const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
+        const auto d1_strinv=(pm1?"-":"")+d1+to_string(i1);
+        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
+            if(d1==d2) continue;
+            const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
+            auto action=action_encode(d1_str+"."+d2_str+"."+d1_strinv);
+            magics.emplace_back(action);
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+
+
+
+// 中央エッジを揃えるのに使う
+VVI get_magic4_2(){
+    // -r4.-d5.r5.d5.r4
+    // -r{中央}.-d{N-1/0}.r{N-1/0}.d{N-1/0}.r{中央}
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1: VI{0, 1}){
+        const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
+        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
+            if(d1==d2) continue;
+            const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
+            auto fronts=action_encode(d1_str+"."+d2_str);
+            auto backs=inverse_action(fronts);
+            for(int i3: VI{0, X-1})for(int pm3: VI{0, 1}){
+                const auto d3_str=(pm3?"":"-")+d1+to_string(i3);
+                auto action=fronts;
+                for(int a: action_encode(d3_str))
+                    action.emplace_back(a);
+                action.insert(action.end(), backs.begin(), backs.end());
+                magics.emplace_back(action);
+            }
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+VVI get_help_magic(){
+    // "f5.f5.-d0.-r0.-f5"
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})for(int i1: VI{0, X-1})for(int pm1: VI{0, 1}){
+        const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
+        const auto d1_strinv=(pm1?"-":"")+d1+to_string(i1);
+        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
+            if(d1==d2) continue;
+            const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
+            for(auto d3: VS{"r","d","f"})for(int i3: VI{0, X-1})for(int pm3: VI{0, 1}){
+                if(d1==d3||d2==d3) continue;
+                const auto d3_str=(pm3?"":"-")+d1+to_string(i3);
+                auto action=action_encode(d1_str+"."+d1_str+"."+d2_str+"."+d3_str+"."+d1_strinv);
+                magics.emplace_back(action);
+            }
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+
+VVI get_magic4_3(){
+    // r2.f5.f5.r3.f5.f5.-r3.f5.f5.
+    // -r2.f5.f5.r3.f5.f5.-r3.f5.f5
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1i: VI{0, 1}){
+        const auto d1_str1=(pm1i?"":"-")+d1+to_string(i1);
+        const auto d1_str1inv=(pm1i?"-":"")+d1+to_string(i1);
+        int j1=X-1-i1;
+        for(int pm1j: VI{0, 1}){
+            const auto d1_str2=(pm1j?"":"-")+d1+to_string(j1);
+            const auto d1_str2inv=(pm1j?"-":"")+d1+to_string(j1);
+            for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1}){
+                if(d1==d2) continue;
+                const auto d2_str_d2_str=d2+to_string(i2)+"."+d2+to_string(i2);
+                auto tmp=d2_str_d2_str+"."+d1_str2+"."+d2_str_d2_str+"."+d1_str2inv+"."+d2_str_d2_str;
+                auto action=action_encode(d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp);
+                magics.emplace_back(action);
+
+                // action=action_encode(d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp+"."+d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp);
+                // magics.emplace_back(action);
+                
+            }
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+
+VVI get_magic4_4(){
+    // r2.r2.-f1.-f2.-f3.-f4.
+    // -r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.
+    // f4.f3.f2.f1.-r2.-r2
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1i: VI{0, 1}){
+        const auto d1_str1=(pm1i?"":"-")+d1+to_string(i1);
+        const auto d1_str1inv=(pm1i?"-":"")+d1+to_string(i1);
+        for(auto d2: VS{"r","d","f"})for(int pm2: VI{0, 1}){
+            if(d1==d2) continue;
+            auto d2_str=(pm2?"":"-")+d2+to_string(1);
+            FOR(i2,2,X-1) d2_str=d2_str+string(".")+(pm2?"":"-")+d2+to_string(i2);
+            auto fronts=action_encode(d1_str1+"."+d1_str1+"."+d2_str);
+            auto backs=inverse_action(fronts);
+            for(auto d3: VS{"r","d","f"})for(int i3: VI{0, X-1}){
+                if(d1==d3||d2==d3) continue;
+                const auto d3_str_d3_str=d3+to_string(i3)+"."+d3+to_string(i3);
+                auto tmp=d1_str1inv+"."+d3_str_d3_str;
+                auto action=fronts;
+                for(int a: action_encode(tmp+"."+tmp+"."+tmp+"."+tmp+"."+d1_str1inv))
+                    action.emplace_back(a);
+                action.insert(action.end(), backs.begin(), backs.end());
+                magics.emplace_back(action);
+
+                // magics.emplace_back(action);
+            }
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+
+
+// センターを揃える
+VVI get_magic5_1(){
+    // r1.-d5.r4.d5.-r1.-d5.-r4.d5
+    VVI magics;
+    for(auto d1: VS{"r","d","f"})FOR(i1a, 1, X-1)for(int pm1a: VI{0, 1}){
+        const auto d1a_str=(pm1a?"":"-")+d1+to_string(i1a);
+        const auto d1a_strinv=(pm1a?"-":"")+d1+to_string(i1a);
+        FOR(i1b, 1, X-1)for(int pm1b: VI{0, 1}){
+            if(i1b==i1a)continue;
+            const auto d1b_str=(pm1b?"":"-")+d1+to_string(i1b);
+            const auto d1b_strinv=(pm1b?"-":"")+d1+to_string(i1b);
+            for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
+                if(d1==d2) continue;
+                const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
+                const auto d2_strinv=(pm2?"-":"")+d2+to_string(i2);
+                auto action=action_encode(d1a_str+"."+d2_strinv+"."+d1b_str+"."+d2_str+"."+d1a_strinv+"."+d2_strinv+"."+d1b_strinv+"."+d2_str);
+                magics.emplace_back(action);
+            }
+        }
+    }
+    dump(SZ(magics))
+    return magics;
+}
+
+
+VI greedy_center(const VI &init_state){
+    auto magics=get_magic4_1();
+    for(auto &m:get_magic5_1())
+        magics.emplace_back(m);
+    VVI help_magic;
+    for(auto d: VS{"r","d","f"})for(int i: VI{0, X-1})for(int pm: VI{0, 1}){
+        const auto d_str=(pm?"":"-")+d+to_string(i);
+        help_magic.emplace_back(action_encode(d_str));
+    }
+    //
+    VVI centers;
+    centers.emplace_back(solution_state);
+    REP(r,3){
+        auto state=solution_state;
+        auto &prev=centers.back();
+        REP(t, 6)REP(i,X)REP(j,X){
+            state[X*X*t+j*X+i]=prev[X*X*t+(X-1-i)*X+j];
+        }
+        centers.emplace_back(state);
+    }
+
+    auto calc_score=[&](const VI &state, int intercept){
+        int score=0;
+        REP(t, 6){
+            int minval=INF;
+            for(auto& center: centers){
+                int val=0;
+                FOR(i, intercept, X-intercept)FOR(j, intercept, X-intercept){
+                    int idx=X*X*t+i*X+j;
+                    if(state[idx]!=center[idx])val++;
+                }
+                minval=min(minval,val);
+            }
+            score+=minval;
+        }
+        return score;
+    };
+    VI result;
+    auto state=init_state;
+    RFOR(intercept, 1, X/2){
+        dump(intercept)
+        int score=calc_score(state,intercept);
+
+
+        int help_num=0;
+        while(score!=0){
+            shuffle(ALL(magics), rand_engine);
+            bool update=false;
+            dump(score)
+            auto s=state;
+            if(help_num>=0)
+                s=simulation(state, help_magic[help_num]);
+            for(auto &magic: magics){
+                auto t=simulation(s, magic);
+                int t_score=calc_score(t, intercept);
+                if(score>t_score){
+                    score=t_score;
+                    state=t;
+                    if(help_num>=0)
+                        result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
+                    result.insert(result.end(), magic.begin(), magic.end());
+                    update=true;
+                    break;
+                }
+            }
+            if(!update){
+                help_num++;
+                dump(help_num)
+                if(help_num>=SZ(help_magic)){
+                    OUT("fail");
+                    break;
+                }
+            }else help_num=-1;
+        }
+        dump(score)
+    }
+    return result;
+}
+
+VI greedy_edge(const VI &init_state){
+    auto magics=get_magic4_2();
+    for(auto &m:get_magic4_3())
+        magics.emplace_back(m);
+    // for(auto &m:get_magic4_4())
+    //     magics.emplace_back(m);
+
+    VVI edges;
+    REP(t, 6){
+        for(int i: VI{0, X-1}){
+            VI edge;
+            REP(j, X)
+                edge.emplace_back(solution_state[X*X*t+i*X+j]);
+            edges.emplace_back(edge);
+            REVERSE(edge);
+            edges.emplace_back(edge);
+        }
+        for(int j: VI{0, X-1}){
+            VI edge;
+            REP(i, X)
+                edge.emplace_back(solution_state[X*X*t+i*X+j]);
+            edges.emplace_back(edge);
+            REVERSE(edge);
+            edges.emplace_back(edge);
+        }
+    }
+
+    auto calc_score=[&](const VI &state, int intercept){
+        int score=0;
+        REP(t, 6){
+            for(int i: VI{0, X-1}){
+                int minval=INF;
+                for(auto& edge: edges){
+                    int val=0;
+                    FOR(j, intercept, X-intercept){
+                        if(state[X*X*t+i*X+j]!=edge[j])val++;
+                    }
+                    minval=min(minval,val);
+                }
+                score+=minval;
+            }
+            for(int j: VI{0, X-1}){
+                int minval=INF;
+                for(auto& edge: edges){
+                    int val=0;
+                    FOR(i, intercept, X-intercept){
+                        if(state[X*X*t+i*X+j]!=edge[i])val++;
+                    }
+                    minval=min(minval,val);
+                }
+                score+=minval;
+            }
+        }
+        return score;
+    };
+    auto help_magic=get_help_magic();
+
+    VI result;
+    auto state=init_state;
+    RFOR(intercept, 1, X/2){
+        dump(intercept)
+        int help_num=-1;
+        int score=calc_score(state,intercept);
+
+
+        while(score!=0){
+            shuffle(ALL(magics), rand_engine);
+            bool update=false;
+            dump(score)
+            auto s=state;
+            if(help_num>=0)
+                s=simulation(state, help_magic[help_num]);
+            for(auto &magic: magics){
+                auto t=simulation(s, magic);
+                int t_score=calc_score(t, intercept);
+                if(score>t_score){
+                    score=t_score;
+                    state=t;
+                    if(help_num>=0)
+                        result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
+                    result.insert(result.end(), magic.begin(), magic.end());
+                    update=true;
+                    break;
+                }
+            }
+            if(!update){
+                help_num++;
+                dump(help_num)
+                if(help_num>=SZ(help_magic)){
+                    OUT("fail");
+                    break;
+                }
+            }else help_num=-1;
+        }
+        dump(score)
+    }
+    return result;
+}
+
+
 
 const string DATA_DIR = "./data/";
 map<string, int> TARGET{
@@ -1202,6 +1810,7 @@ int main() {
     int64_t max_time = 0;
     // REP(i, case_num){
     FOR(i, 255, 256+1){
+    // RFOR(i, 255, 256+1){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
@@ -1226,7 +1835,15 @@ int main() {
         REP(i, state_length)
             label_mapping["N"+to_string(i)]=i;
 
-        score = cube_solver();
+        // auto path=action_encode("f3.r2.-d3.-f5.r5.d3.r0.-r5.-d3.f0.-r0.d0.-f2.-d3.f2.r0.-f5.d0.f5.r2.d0.d0.-r2.-d3.f5.d3.f5.r5.d3.f2.-r5.d3.d3.-f2.d3.f2.r5.-f2.-r5.r5.d5.f2.-d5.-f2.d5.f3.-d5.-f3.-d5.f4.d1.r1.-f1.d4.r1.-r1.-d1.r1.f1.r4.f1.-r4.-f5.-f5.-f5.f0.-d1.-d1.-f0.-r5.-r5.-r5.d1.-r0.-r0.-r0.-d1.-d1.r5.d1.-r5.-r5.-f4.-f4.-r5.f4.f4.r5.-r0.-r0.-d1.-d1.r0.-r0.-r0.d1.d1.d0.d0.r4.-d0.-d0.-d0.-r4.d0.-d0.r0.r0.d0.-f1.r0.f1.r0.r0.r0.-f1.r0.r0.r0.f1.r0.-d4.-r0.d4.r0.-f5.-r0.-d4.-r0.d4.r0.r0.d4.f5.f5.f5.-d4.f5.f5.d4.-f5.-f5.-f5.-d4.-f5.-f5.d1.f5.d4.-f5.-d1.f5.-d4.-f5.d5.r1.d5.r3.-d5.-r1.d5.-r3.-d5.-f2.-d5.-f1.d5.f2.-d5.f1.d5.-d5.-r1.d5.-r2.-d5.r1.d5.r2.-d5.-d5.r5.f1.-d5.f2.d5.-f1.-d5.-f2.r3.r2.-f0.r1.f0.-r3.-r2.-f0.-r1.f0.r2.d5.r1.-d5.-r2.d5.-r1.-d5.-d5.-d5.f0.-r2.-f0.-r4.f0.r2.-f0.r4.f0.r4.-d5.r2.d5.-r4.-d5.-r2.d5.d2.r5.d4.-r5.-d2.r5.-d4.-r5.r5.-d1.f5.-d3.-f5.d1.f5.d3.-f5.f5.-r3.f5.-r1.-f5.r3.f5.r1.-f5.f5.f5.-r1.f5.-r2.-f5.r1.f5.r2.-d0.-d0.-d0.f5.-r1.f5.-r2.-f5.r1.f5.r2.-f5.f5.f5.d4.f5.d3.-f5.-d4.f5.-d3.-f5.d2.r0.d4.-r0.-d2.r0.-d4.-r0.r0.d4.f5.d2.-f5.-d4.f5.-d2.-f5.-f5.-f5.d2.-f5.d4.f5.-d2.-f5.-d4.f5.-f5.-r5.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.f0.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.r5.d0.d0.f3.-r5.f1.r5.-f3.-r5.-f1.r5.-d4.-f0.-d3.f0.d4.-f0.d3.f0.f0.-d2.-f0.-d1.f0.d2.-f0.d1.f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.r4.-f0.r3.f0.-r4.-f0.-r3.f0.r2.-f0.r4.f0.-r2.-f0.-r4.f0.r3.-f0.r1.f0.-r3.-f0.-r1.f0.-d0.r3.-f0.r4.f0.-r3.-f0.-r4.f0.d0.f3.d0.f1.-d0.-f3.d0.-f1.-d0.f1.d0.f3.-d0.-f1.d0.-f3.-d0.-r0.-r0.f4.d0.f2.-d0.-f4.d0.-f2.-d0.-d0.-d0.-d0.f2.d0.f4.-d0.-f2.d0.-f4.-d0.-d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.r0.r0.-r0.r0.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-r0.-r0.-r0.d2.-r0.d1.r0.-d2.-r0.-d1.r0.d2.r0.d4.-r0.-d2.r0.-d4.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-f0.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.-r2.f0.d5.r0.-f0.-d5.r2.-r3.-f0.r0.f0.r3.d0.-f0.-r2.-f0.r0.f0.r2.-d5.-r2.-f0.r0.f0.r2.-d5.f5.d5.r5.-r0.-f0.r3.d5.-r5.-d5.-r3.-f0.-d5.-f0.-r0.-d5.d0.r0.-f0.-f0.d5.d5.-d0.-r3.-f0.r0.f0.r3");
+        // auto path=action_encode("f3.r2.-d3.-f5.r5.d3.r0.-r5.-d3.f0.-r0.d0.-f2.-d3.f2.r0.-f5.d0.f5.r2.d0.d0.-r2.-d3.f5.d3.f5.r5.d3.f2.-r5.d3.d3.-f2.d3.f2.r5.-f2.-r5.r5.d5.f2.-d5.-f2.d5.f3.-d5.-f3.-d5.f4.d1.r1.-f1.d4.r1.-r1.-d1.r1.f1.r4.f1.-r4.-f5.-f5.-f5.f0.-d1.-d1.-f0.-r5.-r5.-r5.d1.-r0.-r0.-r0.-d1.-d1.r5.d1.-r5.-r5.-f4.-f4.-r5.f4.f4.r5.-r0.-r0.-d1.-d1.r0.-r0.-r0.d1.d1.d0.d0.r4.-d0.-d0.-d0.-r4.d0.-d0.r0.r0.d0.-f1.r0.f1.r0.r0.r0.-f1.r0.r0.r0.f1.r0.-d4.-r0.d4.r0.-f5.-r0.-d4.-r0.d4.r0.r0.d4.f5.f5.f5.-d4.f5.f5.d4.-f5.-f5.-f5.-d4.-f5.-f5.d1.f5.d4.-f5.-d1.f5.-d4.-f5.d5.r1.d5.r3.-d5.-r1.d5.-r3.-d5.-f2.-d5.-f1.d5.f2.-d5.f1.d5.-d5.-r1.d5.-r2.-d5.r1.d5.r2.-d5.-d5.r5.f1.-d5.f2.d5.-f1.-d5.-f2.r3.r2.-f0.r1.f0.-r3.-r2.-f0.-r1.f0.r2.d5.r1.-d5.-r2.d5.-r1.-d5.-d5.-d5.f0.-r2.-f0.-r4.f0.r2.-f0.r4.f0.r4.-d5.r2.d5.-r4.-d5.-r2.d5.d2.r5.d4.-r5.-d2.r5.-d4.-r5.r5.-d1.f5.-d3.-f5.d1.f5.d3.-f5.f5.-r3.f5.-r1.-f5.r3.f5.r1.-f5.f5.f5.-r1.f5.-r2.-f5.r1.f5.r2.-d0.-d0.-d0.f5.-r1.f5.-r2.-f5.r1.f5.r2.-f5.f5.f5.d4.f5.d3.-f5.-d4.f5.-d3.-f5.d2.r0.d4.-r0.-d2.r0.-d4.-r0.r0.d4.f5.d2.-f5.-d4.f5.-d2.-f5.-f5.-f5.d2.-f5.d4.f5.-d2.-f5.-d4.f5.-f5.-r5.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.f0.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.r5.d0.d0.f3.-r5.f1.r5.-f3.-r5.-f1.r5.-d4.-f0.-d3.f0.d4.-f0.d3.f0.f0.-d2.-f0.-d1.f0.d2.-f0.d1.f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.r4.-f0.r3.f0.-r4.-f0.-r3.f0.r2.-f0.r4.f0.-r2.-f0.-r4.f0.r3.-f0.r1.f0.-r3.-f0.-r1.f0.-d0.r3.-f0.r4.f0.-r3.-f0.-r4.f0.d0.f3.d0.f1.-d0.-f3.d0.-f1.-d0.f1.d0.f3.-d0.-f1.d0.-f3.-d0.-r0.-r0.f4.d0.f2.-d0.-f4.d0.-f2.-d0.-d0.-d0.-d0.f2.d0.f4.-d0.-f2.d0.-f4.-d0.-d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.r0.r0.-r0.r0.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-r0.-r0.-r0.d2.-r0.d1.r0.-d2.-r0.-d1.r0.d2.r0.d4.-r0.-d2.r0.-d4.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-f0.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.f0.f0.r0");
+        auto path=action_encode("-d2.-f3.d2.-f5.-d3.f2.-d3.-f3.-d3.-d2.-r2.d0.d0.r2.d2.-r0.-d2.f0.f5.f5.d2.-d3.-r0.-r5.d3.-r0.-f3.-d3.r0.d3.f3.r0.-f5.r2.-f5.-r2.f5.-f3.r0.-f3.-r2.-f0.r2.f3.-r0.f3.-r2.f0.r2.-r0.d1.f5.-d1.f4.d0.-f2.-d0.-f4.d0.f2.-d0.-f2.-r0.f1.r0.f2.-r0.-f1.r0.-d4.r0.d1.-r0.d4.r0.-d1.-r0.-f2.r0.-f4.-r0.f2.r0.f4.-r0.-r4.-d5.r3.d5.r4.-d5.-r3.d5.-f2.d5.-f4.-d5.f2.d5.f4.-d5.-d2.f0.-d1.-f0.d2.f0.d1.-f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.-d4.-r0.-d3.r0.d4.-r0.d3.r0.-f4.-r5.-f3.r5.f4.-r5.f3.r5.f1.r5.f4.-r5.-f1.r5.-f4.-r5.r4.-d5.-r2.d5.-r4.-d5.r2.d5.d1.r5.d2.-r5.-d1.r5.-d2.-r5.r4.-d0.r1.d0.-r4.-d0.-r1.d0.d2.-r0.-d4.r0.-d2.-r0.d4.r0.-d1.r5.-d3.-r5.d1.r5.d3.-r5.f1.-d0.-f3.d0.-f1.-d0.f3.d0.f4.-d5.f1.d5.-f4.-d5.-f1.d5.-f4.-r0.-f3.r0.f4.-r0.f3.r0.-r3.-f5.r1.f5.r3.-f5.-r1.f5.d4.f5.d2.-f5.-d4.f5.-d2.-f5.f4.d5.-f3.-d5.-f4.d5.f3.-d5.f1.d0.f4.-d0.-f1.d0.-f4.-d0.d2.r0.d1.-r0.-d2.r0.-d1.-r0.d1.f0.-d4.-f0.-d1.f0.d4.-f0.f1.-r5.-f4.r5.-f1.-r5.f4.r5.f3.-r0.f1.r0.-f3.-r0.-f1.r0.-d2.-r5.-d4.r5.d2.-r5.d4.r5.-f2.-d0.f1.d0.f2.-d0.-f1.d0.r1.-f5.r4.f5.-r1.-f5.-r4.f5.-f1.r5.f2.-r5.f1.r5.-f2.-r5.-r4.f5.-r3.-f5.r4.f5.r3.-f5.-d4.-f0.-d1.f0.d4.-f0.d1.f0.d4.f5.d1.-f5.-d4.f5.-d1.-f5.-f3.d5.f4.-d5.f3.d5.-f4.-d5.-f3.-d5.-f1.d5.f3.-d5.f1.d5.f1.-d0.f3.d0.-f1.-d0.-f3.d0.-r0.-d1.-r0.-d2.r0.d1.-r0.d2.r0.-f1.d5.-f2.-d5.f1.d5.f2.-d5.-d3.-f5.d1.f5.d3.-f5.-d1.f5.d3.-f5.d1.f5.-d3.-f5.-d1.f5.-r0.-d4.r0.-d3.-r0.d4.r0.d3.-r0.-r0.d2.r0.d1.-r0.-d2.r0.-d1.-r0.-d0.r1.-f0.-r2.f0.-r1.-f0.r2.f0.-r1.-d0.r2.d0.r1.-d0.-r2.d0.-r3.-d0.r4.d0.r3.-d0.-r4.d0.-d0.r1.-f5.-r4.f5.-r1.-f5.r4.f5.f1.r5.-f4.-r5.-f1.r5.f4.-r5.-r1.-f0.r4.f0.r1.-f0.-r4.f0.-d5.-r1.-d5.-r4.d5.r1.-d5.r4.d5.-r2.f5.r4.-f5.r2.f5.-r4.-f5.-f0.-r4.-d0.r2.d0.r4.-d0.-r2.d0.-f0.-r1.-d5.r4.d5.r1.-d5.-r4.d5");
+        // path=greedy_center(simulation(initial_state, path));
+        path=greedy_edge(simulation(initial_state, path));
+        dump(action_decode(path))
+        exit(1);
+
+        // score = cube_solver();
 
         score=check_answer(output_filename);
         timer.end();
