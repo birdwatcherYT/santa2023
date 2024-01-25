@@ -37,7 +37,7 @@ make
 実装中...
 
 # 形式の変換
-csv(kaggle)とtxt形式(AtCoder形式)の相互変換
+csvとtxt形式(分解)の相互変換
 
 ```bash
 python csv_to_txt.py
