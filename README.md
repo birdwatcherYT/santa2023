@@ -35,3 +35,14 @@ make
 
 ## CUBE
 実装中...
+
+# 形式の変換
+csv(kaggle)とtxt形式(AtCoder形式)の相互変換
+
+```bash
+python csv_to_txt.py
+python txt_to_csv.py
+```
+
+- 入出力固定してあるので、適宜修正して実行する
+- 解をマージする際に使ったりする
