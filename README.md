@@ -23,7 +23,7 @@ make
 - mode: 4つのモード 0,1,2,3. 
     - 0: 何もしない。解のバリデーションのみ。 
     - 1: 単純な処理のみ。wildcard_finish/same_state_skip/cancel_opposite_loop/rotate_skip/summerize_rotate。
-    - 2: SWAP処理のみ。find_swap。
+    - 2: SWAP処理のみ。find_swap_loop。
     - 3: 重い処理。dual_greedy_improve。問題によってはメモリバク食いかつCPUフル稼働で激重。openmp必要。
     - 基本は、1実行後、2を実施すればOK。3は軽いものに絞るかベスト解のみに適用がおすすめ。
 - problem_id: 圧縮したい問題ID。ない場合は全部圧縮。

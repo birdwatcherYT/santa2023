@@ -2603,6 +2603,26 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
     return result;
 }
 
+
+VI find_swap_loop(const string &output_filename, const VI& actions, int swap_search_length){
+    VI result=actions;
+    int size;
+    do{
+        size=SZ(result);
+        result=find_swap(result, swap_search_length, false);
+        // result=find_swap(result, swap_search_length, true);
+
+        dump(SZ(result))
+        int mistake = get_mistakes(simulation(initial_state, result));
+        assert(mistake<=num_wildcards);
+        if(SZ(result)<size){
+            OUT("saved", size, "->", SZ(result));
+            save_actions(output_filename, result);
+        }
+    }while(SZ(result)<size);
+    return result;
+}
+
 // TODO: 同じ問題タイプをすべて使う
 // 解の系列の中で存在するより短い別表現に置き換える
 VI shorter_subactions(const VI& actions){
@@ -2734,12 +2754,11 @@ int compression(
             }
             // result = loop_compress(result);
             // result = shorter_subactions(result);
-        }CASE 2:{
-            result = find_swap(result, swap_search_length, false);
-            // result = find_swap(result, swap_search_length, true);
             // result = kstep_replace(result, depth);
             // // result = kstep_replace(result, depth, true);
             // // result = kstep_replace(result, depth, false);
+        }CASE 2:{
+            result = find_swap_loop(output_filename, result, swap_search_length);
         }CASE 3:{
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
             // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
