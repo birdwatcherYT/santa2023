@@ -46,6 +46,7 @@
 #define ITR(it, v) for(auto it = (v).begin(); it != (v).end(); ++it)
 #define RITR(it, v) for(auto it = (v).rbegin(); it != (v).rend(); ++it)
 #define CASE break; case
+#define DEFAULT break; default
 #define ALL(v)  (v).begin(), (v).end()
 #define RALL(v) (v).rbegin(), (v).rend()
 #define SZ(v) int((v).size())
@@ -1938,6 +1939,16 @@ VI cancel_opposite(const VI& actions){
     return result;
 }
 
+VI cancel_opposite_loop(const VI& actions){
+    VI result=actions;
+    int size;
+    do{
+        size=SZ(result);
+        result=cancel_opposite(result);
+    }while(SZ(result)<size);
+    return result;
+}
+
 void generate_all(deque<int>& actions, const VI &index, int maxdepth, 
              ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, deque<int>>>> &bestaction){
     if(SZ(actions)>maxdepth)return;
@@ -2099,7 +2110,7 @@ VI kstep_replace(const VI &action, int k){
                             auto tmp=result;
                             tmp.insert(tmp.end(), path.begin(), path.end());
                             int sz=SZ(tmp);
-                            tmp = cancel_opposite(tmp);
+                            tmp = cancel_opposite_loop(tmp);
                             if(SZ(tmp)<sz){
                                 OUT("update");
                                 result=tmp;
@@ -2120,7 +2131,7 @@ VI kstep_replace(const VI &action, int k){
                                 tmp.emplace_back(action[k]);
                             }
                             int sz=SZ(tmp);
-                            tmp = cancel_opposite(tmp);
+                            tmp = cancel_opposite_loop(tmp);
                             if(SZ(tmp)<sz){
                                 OUT("update");
                                 result=tmp;
@@ -2365,7 +2376,7 @@ VI summerize_rotate(const VI& action, int intercept=0){
     //     }
     // }
     // // dump(simulation(initial_state, result))
-    return result;
+    return result.size()<action.size() ? result : action;
 }
 
 void get_all_rotate(const VI& op, int gid, int size, vector<PII>& path, map<uint64_t, tuple<int, vector<PII>, VI>> &rotates, ZobristHashing<uint64_t> &zhash){
@@ -2392,6 +2403,7 @@ void get_all_rotate(const VI& op, int gid, int size, vector<PII>& path, map<uint
 }
 // 回転して一致する状態までジャンプ wreath以外
 VI rotate_skip(const VI& action){
+    if(kind=="wreath")return action;
     ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
 
     map<uint64_t, tuple<int, vector<PII>, VI>> rotates;
@@ -2482,7 +2494,7 @@ VI rotate_skip(const VI& action){
             break;
         }
     }
-    return result;
+    return result.size()<action.size() ? result : action;
 }
 
 VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
@@ -2523,7 +2535,7 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
                     tmp.insert(tmp.end(), a2.begin(), a2.end());
                     tmp.insert(tmp.end(), a1.begin(), a1.end());
                     int sz=SZ(tmp);
-                    tmp=cancel_opposite(tmp);
+                    tmp=cancel_opposite_loop(tmp);
                     if(SZ(tmp)<sz){
                         OUT("improve front!", sz-SZ(tmp));
                         result=tmp;
@@ -2555,7 +2567,7 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
                     for(j=i+len1+len2; j<SZ(actions) && g1_back==get_group_id(actions[j]); ++j)
                         tmp.emplace_back(actions[j]);
                     int sz=SZ(tmp);
-                    tmp=cancel_opposite(tmp);
+                    tmp=cancel_opposite_loop(tmp);
                     if(SZ(tmp)<sz){
                         OUT("improve back!", sz-SZ(tmp));
                         result=tmp;
@@ -2651,7 +2663,7 @@ VI shorter_subactions(const VI& actions){
                         auto tmp=result;
                         tmp.insert(tmp.end(), actions.begin()+pi, actions.begin()+pj+1);
                         int sz=SZ(tmp);
-                        tmp = cancel_opposite(tmp);
+                        tmp = cancel_opposite_loop(tmp);
                         if(SZ(tmp)<sz){
                             OUT("update");
                             result=tmp;
@@ -2672,7 +2684,7 @@ VI shorter_subactions(const VI& actions){
                             tmp.emplace_back(actions[k]);
                         }
                         int sz=SZ(tmp);
-                        tmp = cancel_opposite(tmp);
+                        tmp = cancel_opposite_loop(tmp);
                         if(SZ(tmp)<sz){
                             OUT("update");
                             result=tmp;
@@ -2692,37 +2704,59 @@ VI shorter_subactions(const VI& actions){
 }
 
 // 解の圧縮
-int compression(const string &filename, int depth, int search_step=INF, int random_prune=0){
-    if(!file_exists(filename))
+int compression(
+    const string &input_filename, 
+    const string &output_filename, 
+    int mode,
+    int depth, // depthステップ先まで状態生成する
+    int search_step=INF, // どれだけ先まで合流先を見るか
+    int swap_search_length=50, // どの長さまでの合成操作を見るか
+    int rotate_intercept=0, // 平行な複数動作を他を動かすことで実現し、最後に帳尻合わせする。基本0でいいが1や-1で改善することもある。globeの33/25あたりだと計算が終わらないことがある
+    bool can_rotate=false, // あらゆる回転状態を考慮する globeの33/25あたりだと計算が終わらない
+    int random_prune=0 // 0でいい。状態候補生成時にこのパーセンテージで枝刈りする
+){
+    if(!file_exists(input_filename))
         return INF;
-    auto actions=load_actions(filename);
+    auto actions=load_actions(input_filename);
     dump(SZ(actions))
 
     auto result = actions;
-    // result=shorter_subactions(result);
-    // result = find_swap(result, 100, false);
-    result = find_swap(result, 50, false);
-    // // result = find_swap(result, 10, true);
-    // result=rotate_skip(result);
-    // result = wildcard_finish(result);
-    // result = cancel_opposite(result);
-    // result = kstep_replace(result, depth);
-    // // result = kstep_replace(result, depth, true);
-    // // result = kstep_replace(result, depth, false);
-    // result=summerize_rotate(result, 0);
-    // result=summerize_rotate(result, 1);
-    // // result=summerize_rotate(result, -1);
-    // result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
-    // // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
-    // // result = greedy_improve(result, depth);
-    result = same_state_skip(result);
-    result = loop_compress(result);
+    switch(mode){
+        case 0:{
+            // nothing
+        }CASE 1:{
+            result = wildcard_finish(result);
+            result = same_state_skip(result);
+            result = cancel_opposite_loop(result);
+            if(can_rotate){
+                result = rotate_skip(result);
+                result = summerize_rotate(result, rotate_intercept);
+            }
+            // result = loop_compress(result);
+            // result = shorter_subactions(result);
+        }CASE 2:{
+            result = find_swap(result, swap_search_length, false);
+            // result = find_swap(result, swap_search_length, true);
+            // result = kstep_replace(result, depth);
+            // // result = kstep_replace(result, depth, true);
+            // // result = kstep_replace(result, depth, false);
+        }CASE 3:{
+            result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
+            // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
+            // result = greedy_improve(result, depth);
+        }DEFAULT:{
+            cerr<<"unsupported mode: "<<mode<<endl;
+            exit(1);
+        }
+    }
+
+    dump(SZ(result))
 
     int mistake = get_mistakes(simulation(initial_state, result));
     assert(mistake<=num_wildcards);
     if(SZ(result)<SZ(actions)){
         OUT("saved", SZ(actions), "->", SZ(result));
-        save_actions(filename, result);
+        save_actions(output_filename, result);
     }
     return SZ(result);
 }
@@ -3050,7 +3084,7 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 
 //         if(current_annealing_score<=num_wildcards){
 //             int sz=SZ(candidates);
-//             state.action = cancel_opposite(state.action);
+//             state.action = cancel_opposite_loop(state.action);
 //             candidates.emplace(state.action);
 //             if(SZ(candidates)>sz){
 //                 dump(SZ(candidates))
@@ -3126,73 +3160,86 @@ int compression(const string &filename, int depth, int search_step=INF, int rand
 
 
 
-const string DATA_DIR = "./data/";
-map<string, int> TARGET{
-       {"cube_2/2/2", 5},
-       {"cube_3/3/3", 4},
-       {"cube_4/4/4", 4},
-       {"cube_5/5/5", 3},
-       {"cube_6/6/6", 3},
-       {"cube_7/7/7", 3},
-       {"cube_8/8/8", 3},
-       {"cube_9/9/9", 3},
-       {"cube_10/10/10", 3},
-       {"cube_19/19/19", 2},
-       {"cube_33/33/33", 1},
-       {"wreath_6/6", 12},
-       {"wreath_7/7", 12},
-       {"wreath_12/12", 12},
-       {"wreath_21/21", 12},
-       {"wreath_33/33", 12},
-       {"wreath_100/100", 12},
-       {"globe_1/8", 4},
-       {"globe_1/16", 3},
-       {"globe_2/6", 4},
-       {"globe_3/4", 4},
-       {"globe_6/4", 4},
-       {"globe_6/8", 3},
-       {"globe_6/10", 3},
-       {"globe_3/33", 2},
-       {"globe_8/25", 2}
+const string PROBLEM_DATA_DIR = "./data/";
+// type -> depth, rotate
+map<string, pair<int, bool>> TARGET{
+       {"cube_2/2/2", {5, true}},
+       {"cube_3/3/3", {4, true}},
+       {"cube_4/4/4", {4, true}},
+       {"cube_5/5/5", {3, true}},
+       {"cube_6/6/6", {3, true}},
+       {"cube_7/7/7", {3, true}},
+       {"cube_8/8/8", {3, true}},
+       {"cube_9/9/9", {3, true}},
+       {"cube_10/10/10", {3, true}},
+       {"cube_19/19/19", {2, true}},
+       {"cube_33/33/33", {1, true}},
+       {"wreath_6/6", {12, false}},
+       {"wreath_7/7", {12, false}},
+       {"wreath_12/12", {12, false}},
+       {"wreath_21/21", {12, false}},
+       {"wreath_33/33", {12, false}},
+       {"wreath_100/100", {12, false}},
+       {"globe_1/8", {4, true}},
+       {"globe_1/16", {3, true}},
+       {"globe_2/6", {4, true}},
+       {"globe_3/4", {4, true}},
+       {"globe_6/4", {4, true}},
+       {"globe_6/8", {3, true}},
+       {"globe_6/10", {3, true}},
+       {"globe_3/33", {2, false}},
+       {"globe_8/25", {2, false}}
 };
 
-int main() {
+int main(int argc, char *argv[]){
+    // 
+    if(argc!=4 && argc!=5){
+        cerr<<"-----------------------------------------"<<endl;
+        cerr<<"How to use"<<endl;
+        cerr<<"-----------------------------------------"<<endl;
+        cerr<<"$ make"<<endl;
+        cerr<<"$ ./heuristic.exe input_dir output_dir mode [problem_id]"<<endl;
+        cerr<<"- input_dir:  {input_dir}/{problem_id}.txt is action path. "<<endl;
+        cerr<<"- output_dir: The result is saved to {output_dir}/{problem_id}.txt. input_dir=output_dir is ok. "<<endl;
+        cerr<<"- mode: Four modes 0,1,2,3. 0: no change (validation). 1: simple. 2: normal. 3: heavy (requires large memory, openmp). "<<endl;
+        cerr<<"- problem_id: optional. "<<endl;
+        return 1;
+    }
+    string output_dir = (argv[1]);
+    string input_dir = (argv[2]);
+    int mode = atoi(argv[3]);
+    assert(0<=mode&& mode<=3);
+    int problem_id = (argc==5) ? atoi(argv[4]) : -1;
+
     ChronoTimer timer;
     int case_num = 398;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    // for(int i: VI{200000, 201000, 202000, 204000, 205000, 206000, 207000, 208000, 209000, 240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
-    // for(int i: VI{200, 201, 202, 204, 205, 206, 207, 208, 209, 240, 241, 242, 243, 244, 255, 256, 283}){
-    // for(int i: VI{255000, 256000, 283000}){
-    // for(int i: VI{240000, 241000, 242000, 243000, 244000, 255000, 256000, 283000}){
-    // for(int i: VI{388,389,390,392,393,394,396,397}){
-    // for(int i: VI{352,388,389,390,391,392,393,394,395,396,397}){
-    // REP(i, case_num){
-    // RREP(i, case_num){
-    REP(_,100)
-    for(int i: VI{277,278,279,280,281,282}){
-    // FOR(i, 205, 210){
-    // FOR(i, 330, case_num){
-    // FOR(i, 200, case_num){
-    // FOR(i, 338, case_num){
-    // RREP(i, case_num){
+    VI problems;
+    if(problem_id >= 0)
+        problems.emplace_back(problem_id);
+    else{
+        problems.resize(case_num);
+        ARANGE(problems);
+    }
+
+    for(int i: problems){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
-        string input_filename = to_string(i) + ".txt";
-        string file_path = DATA_DIR + input_filename;
-        ifstream ifs(file_path);
+        string filename = to_string(i) + ".txt";
+        string problem_path = PROBLEM_DATA_DIR + filename;
+        ifstream ifs(problem_path);
         assert(!ifs.fail());
         data_load(ifs);
         if(!TARGET.contains(puzzle_type))
             continue;
         OUT("id", i);
-        // if(num_wildcards==0)continue;
         double score=0;
 
-        string output_filename="output/"+to_string(i)+".txt";
-        // string output_filename="globe/"+to_string(i)+".txt";
+        string input_filename=input_dir+"/"+filename;
+        string output_filename=output_dir+"/"+filename;
         // score=ida_solve(output_filename, false);
         // score=ida_solve(output_filename, true);
 
@@ -3205,14 +3252,23 @@ int main() {
         // score=solve_using_subproblem(output_filename, "subanswer/"+to_string(i*1000)+".txt", 50, 10, 4);
         // best_search_step_width(output_filename, 4, 1000);
  
-        // score=compression(output_filename, TARGET[puzzle_type]);
-        score=compression(output_filename, TARGET[puzzle_type], 100);
-        // score=compression(output_filename, TARGET[puzzle_type]+1, 100, 25);
-        // score=compression(output_filename, TARGET[puzzle_type]+2, 100, 60);
-
         // score = annealing(output_filename, INF, 100);
 
+        score=compression(
+            input_filename, 
+            output_filename, 
+            mode,
+            TARGET[puzzle_type].first, // このステップ先まで候補生成
+            100, // このステップ先まで合流可能か確認
+            50, // 可換チェックする合成操作の最大長
+            0, // 平行な複数動作を他を動かすことで実現する基準
+            TARGET[puzzle_type].second, // 回転考慮
+            0
+        );
+
+        // 出力したデータのチェック
         score=check_answer(output_filename);
+
         timer.end();
         if(DEBUG) {
             auto time = timer.time();
