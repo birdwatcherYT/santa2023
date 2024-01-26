@@ -700,6 +700,7 @@ VI construct_actions(uint64_t init_hash, uint64_t last_hash, const unordered_map
 }
 
 
+
 // VI solve_center(){
 //     int size=X*X;
 //     auto center_penalty = [&](int panel, const VI& state, int intercept){
@@ -1441,60 +1442,288 @@ int cube_solver(){
 
 
 // センターを揃える
+// https://cube.uubio.com/4x4x4/
 VVI get_magic4_1(){
     // r2.d5.-r2
-    VVI magics;
-    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1: VI{0, 1}){
-        const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
-        const auto d1_strinv=(pm1?"-":"")+d1+to_string(i1);
-        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
-            if(d1==d2) continue;
-            const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
-            auto action=action_encode(d1_str+"."+d2_str+"."+d1_strinv);
-            magics.emplace_back(action);
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
+
+    VI index(state_length);
+    ARANGE(index);
+
+    for(const auto& d1: VS{"r","d","f"})FOR(i1, 1, X-1)REP(sign1, 2){
+        const auto a1=(sign1?"":"-")+d1+to_string(i1);
+        const auto a1inv=(sign1?"-":"")+d1+to_string(i1);
+        for(const auto& d2: VS{"r","d","f"})if(d1!=d2)for(int i2: VI{0, X-1})REP(sign2, 2){
+            const auto a2=(sign2?"":"-")+d2+to_string(i2);
+            auto action=action_encode(a1+"."+a2+"."+a1inv);
+
+            auto state=simulation(index, action);
+            auto hash=zhash.hash(state);
+            if(!ops.contains(hash) || action.size()<ops[hash].size())
+                ops[hash]=action;
+
+            // 180度
+            action=action_encode(a1+"."+a1+"."+a2+"."+a1inv+"."+a1inv);
+            state=simulation(index, action);
+            hash=zhash.hash(state);
+            if(!ops.contains(hash) || action.size()<ops[hash].size())
+                ops[hash]=action;
         }
     }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
     dump(SZ(magics))
     return magics;
 }
 
+
+VVI get_centers(){
+    VVI centers;
+    VI index(state_length);
+    ARANGE(index);
+    centers.emplace_back(index);
+    REP(r,3){
+        auto state=index;
+        auto &prev=centers.back();
+        REP(t, 6)REP(i,X)REP(j,X){
+            state[X*X*t+j*X+i]=prev[X*X*t+(X-1-i)*X+j];
+        }
+        centers.emplace_back(state);
+    }
+    return centers;
+}
+bool check_center_change(const VVI &centers, const VI &state){
+    bool allok=true;
+    REP(t, 6)if(allok){
+        bool okpanel=false;
+        for(auto& center: centers)if(!okpanel){
+            bool ok=true;
+            FOR(i, 1, X-1)if(ok)FOR(j, 1, X-1)if(ok){
+                int idx=X*X*t+i*X+j;
+                if(state[idx]!=center[idx])ok=false;
+            }
+            okpanel|=ok;
+        }
+        allok&=okpanel;
+    }
+    return allok;
+};
 
 
 // 中央エッジを揃えるのに使う
+// TODO: エッジだけが変更されていることの確認
 VVI get_magic4_2(){
     // -r4.-d5.r5.d5.r4
     // -r{中央}.-d{N-1/0}.r{N-1/0}.d{N-1/0}.r{中央}
-    VVI magics;
-    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1: VI{0, 1}){
-        const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
-        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
-            if(d1==d2) continue;
-            const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
-            auto fronts=action_encode(d1_str+"."+d2_str);
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
+
+    VI index(state_length);
+    ARANGE(index);
+
+    VVI centers=get_centers();
+    for(const auto &d1: VS{"r","d","f"})FOR(i1, 1, X-1)REP(sign1, 2)REP(cnt1, 2){
+        auto a1=(sign1?"":"-")+d1+to_string(i1);
+        if(cnt1)a1+=a1;
+
+        for(const auto &d2: VS{"r","d","f"})if(d1!=d2)for(int i2: VI{0, X-1})REP(sign2, 2)REP(cnt2, 2){
+            auto a2=(sign2?"":"-")+d2+to_string(i2);
+            if(cnt2)a2+=a2;
+
+            auto fronts=action_encode(a1+"."+a2);
             auto backs=inverse_action(fronts);
-            for(int i3: VI{0, X-1})for(int pm3: VI{0, 1}){
-                const auto d3_str=(pm3?"":"-")+d1+to_string(i3);
+
+            for(int i3: VI{0, X-1})REP(sign3, 2)REP(cnt3, 2){
+                auto a3=(sign3?"":"-")+d1+to_string(i3);
+                if(cnt3)a3+=a3;
+
                 auto action=fronts;
-                for(int a: action_encode(d3_str))
+                for(int a: action_encode(a3))
                     action.emplace_back(a);
                 action.insert(action.end(), backs.begin(), backs.end());
-                magics.emplace_back(action);
+
+                auto state=simulation(index, action);
+                auto hash=zhash.hash(state);
+                bool allok=check_center_change(centers, state);
+                if(allok && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
             }
         }
     }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
     dump(SZ(magics))
     return magics;
 }
+
+VVI get_magic4_3(){
+    // r2.f5.f5.r3.f5.f5.-r3.f5.f5.
+    // -r2.f5.f5.r3.f5.f5.-r3.f5.f5
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
+
+    VI index(state_length);
+    ARANGE(index);
+
+    VVI centers=get_centers();
+    for(const auto &d1: VS{"r","d","f"})FOR(i1, 1, X-1)REP(sign1, 2){
+        auto a1=(sign1?"":"-")+d1+to_string(i1);
+        auto a1inv=(sign1?"-":"")+d1+to_string(i1);
+        int i2=X-1-i1;
+        REP(sign2, 2){
+            auto a2=(sign2?"":"-")+d1+to_string(i2);
+            auto a2inv=(sign2?"-":"")+d1+to_string(i2);
+            for(const auto & d3: VS{"r","d","f"})if(d1!=d3)for(int i3: VI{0, X-1}){
+                const auto a3a3=d3+to_string(i3)+"."+d3+to_string(i3);
+                auto tmp=a3a3+"."+a2+"."+a3a3+"."+a2inv+"."+a3a3;
+
+                auto action=action_encode(a1+"."+tmp+"."+a1inv +"."+ tmp);
+                auto state=simulation(index, action);
+                auto hash=zhash.hash(state);
+                bool allok=check_center_change(centers, state);
+                if(allok && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+
+                action=action_encode(a1+"."+tmp+"."+a1inv +"."+ tmp+"."+a1+"."+tmp+"."+a1inv +"."+ tmp);
+                state=simulation(index, action);
+                hash=zhash.hash(state);
+                allok=check_center_change(centers, state);
+                if(allok && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+            }
+        }
+    }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
+    dump(SZ(magics))
+    return magics;
+}
+
+VVI get_magic4_4(){
+    // r2.r2.-f1.-f2.-f3.-f4.
+    // -r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.
+    // f4.f3.f2.f1.-r2.-r2
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
+
+    VI index(state_length);
+    ARANGE(index);
+
+    VVI centers=get_centers();
+    for(const auto & d1: VS{"r","d","f"})FOR(i1, 1, X-1)REP(sign1, 2){
+        const auto a1=(sign1?"":"-")+d1+to_string(i1);
+        const auto a1inv=(sign1?"-":"")+d1+to_string(i1);
+        for(const auto & d2: VS{"r","d","f"})if(d1!=d2)REP(sign2, 2){
+            auto a2=(sign2?"":"-")+d2+to_string(1);
+            FOR(i2,2,X-1)
+                a2=a2+string(".")+(sign2?"":"-")+d2+to_string(i2);
+            auto fronts=action_encode(a1+"."+a1+"."+a2);
+            auto backs=inverse_action(fronts);
+            for(const auto & d3: VS{"r","d","f"})if(d1!=d3&&d2!=d3)for(int i3: VI{0, X-1}){
+                const auto a3a3=d3+to_string(i3)+"."+d3+to_string(i3);
+                auto tmp=a1inv+"."+a3a3;
+                auto action=fronts;
+                for(int a: action_encode(tmp+"."+tmp+"."+tmp+"."+tmp+"."+a1inv))
+                    action.emplace_back(a);
+                action.insert(action.end(), backs.begin(), backs.end());
+
+                auto state=simulation(index, action);
+                auto hash=zhash.hash(state);
+                bool allok=check_center_change(centers, state);
+                if(allok && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+
+                action=fronts;
+                for(int a: action_encode(tmp+"."+tmp+"."+tmp+"."+tmp+"."+a1inv+"."+tmp+"."+tmp+"."+tmp+"."+tmp+"."+a1inv))
+                    action.emplace_back(a);
+                action.insert(action.end(), backs.begin(), backs.end());
+
+                state=simulation(index, action);
+                hash=zhash.hash(state);
+                allok=check_center_change(centers, state);
+                if(allok && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+            }
+        }
+    }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
+    dump(SZ(magics))
+    return magics;
+}
+
+// センターを揃える
+VVI get_magic5_1(){
+    // r1.-d5.r4.d5.-r1.-d5.-r4.d5
+
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
+
+    VI index(state_length);
+    ARANGE(index);
+    for(const auto & d1: VS{"r","d","f"})FOR(i1, 1, X-1)REP(sign1, 2){
+        const auto a1=(sign1?"":"-")+d1+to_string(i1);
+        const auto a1inv=(sign1?"-":"")+d1+to_string(i1);
+        for(const auto & d2: VS{"r","d","f"})FOR(i2, 1, X-1)REP(sign2, 2){
+            const auto a2=(sign2?"":"-")+d2+to_string(i2);
+            const auto a2inv=(sign2?"-":"")+d2+to_string(i2);
+            for(const auto & d3: VS{"r","d","f"})for(int i3: VI{0, X-1})REP(sign3, 2){
+                // if(d1==d3) continue;
+                const auto a3=(sign3?"":"-")+d3+to_string(i3);
+                const auto a3inv=(sign3?"-":"")+d3+to_string(i3);
+
+                auto action=action_encode(a1+"."+a3inv+"."+a2+"."+a3+"."+a1inv+"."+a3inv+"."+a2inv+"."+a3);
+                auto state=simulation(index, action);
+                int mistake=get_mistakes(state, index);
+                auto hash=zhash.hash(state);
+                if(mistake==3 && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+
+                action=action_encode(a1+"."+a1+"."+a3inv+"."+a2+"."+a3+"."+a1inv+"."+a1inv+"."+a3inv+"."+a2inv+"."+a3);
+                state=simulation(index, action);
+                mistake=get_mistakes(state, index);
+                hash=zhash.hash(state);
+                if(mistake==3 && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+                
+                action=action_encode(a1+"."+a3inv+"."+a2+"."+a2+"."+a3+"."+a1inv+"."+a3inv+"."+a2inv+"."+a2inv+"."+a3);
+                state=simulation(index, action);
+                mistake=get_mistakes(state, index);
+                hash=zhash.hash(state);
+                if(mistake==3 && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+                
+                action=action_encode(a1+"."+a1+"."+a3inv+"."+a2+"."+a2+"."+a3+"."+a1inv+"."+a1inv+"."+a3inv+"."+a2inv+"."+a2inv+"."+a3);
+                state=simulation(index, action);
+                mistake=get_mistakes(state, index);
+                hash=zhash.hash(state);
+                if(mistake==3 && (!ops.contains(hash) || action.size()<ops[hash].size()))
+                    ops[hash]=action;
+            }
+        }
+    }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
+    dump(SZ(magics))
+    return magics;
+}
+
 VVI get_help_magic(){
     // "f5.f5.-d0.-r0.-f5"
     VVI magics;
-    for(auto d1: VS{"r","d","f"})for(int i1: VI{0, X-1})for(int pm1: VI{0, 1}){
+    for(const auto &d1: VS{"r","d","f"})for(int i1: VI{0, X-1})for(int pm1: VI{0, 1}){
         const auto d1_str=(pm1?"":"-")+d1+to_string(i1);
         const auto d1_strinv=(pm1?"-":"")+d1+to_string(i1);
-        for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
+        for(const auto &d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
             if(d1==d2) continue;
             const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
-            for(auto d3: VS{"r","d","f"})for(int i3: VI{0, X-1})for(int pm3: VI{0, 1}){
+            for(const auto &d3: VS{"r","d","f"})for(int i3: VI{0, X-1})for(int pm3: VI{0, 1}){
                 if(d1==d3||d2==d3) continue;
                 const auto d3_str=(pm3?"":"-")+d1+to_string(i3);
                 auto action=action_encode(d1_str+"."+d1_str+"."+d2_str+"."+d3_str+"."+d1_strinv);
@@ -1506,101 +1735,67 @@ VVI get_help_magic(){
     return magics;
 }
 
-VVI get_magic4_3(){
-    // r2.f5.f5.r3.f5.f5.-r3.f5.f5.
-    // -r2.f5.f5.r3.f5.f5.-r3.f5.f5
-    VVI magics;
-    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1i: VI{0, 1}){
-        const auto d1_str1=(pm1i?"":"-")+d1+to_string(i1);
-        const auto d1_str1inv=(pm1i?"-":"")+d1+to_string(i1);
-        int j1=X-1-i1;
-        for(int pm1j: VI{0, 1}){
-            const auto d1_str2=(pm1j?"":"-")+d1+to_string(j1);
-            const auto d1_str2inv=(pm1j?"-":"")+d1+to_string(j1);
-            for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1}){
-                if(d1==d2) continue;
-                const auto d2_str_d2_str=d2+to_string(i2)+"."+d2+to_string(i2);
-                auto tmp=d2_str_d2_str+"."+d1_str2+"."+d2_str_d2_str+"."+d1_str2inv+"."+d2_str_d2_str;
-                auto action=action_encode(d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp);
-                magics.emplace_back(action);
+// パネルを回転させる系操作
+VVI get_rotate_panel(){
+    // "f5.r0"
+    ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+    unordered_map<uint64_t, VI> ops;
 
-                // action=action_encode(d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp+"."+d1_str1+"."+tmp+"."+d1_str1inv +"."+ tmp);
-                // magics.emplace_back(action);
-                
-            }
+    VI index(state_length);
+    ARANGE(index);
+    for(const auto& d1: VS{"r","d","f"})for(int i: VI{0, X-1})REP(sign1, 2){
+        const auto a1=(sign1?"":"-")+d1+to_string(i);
+
+        auto action=action_encode(a1);
+        auto state=simulation(index, action);
+        auto hash=zhash.hash(state);
+        if(!ops.contains(hash) || action.size()<ops[hash].size())
+            ops[hash]=action;
+        
+        for(const auto& d2: VS{"r","d","f"})for(int i2: VI{0, X-1})REP(sign2, 2){
+            const auto a2=(sign2?"":"-")+d2+to_string(i2);
+            
+            action=action_encode(a1+"."+a2);
+            state=simulation(index, action);
+            hash=zhash.hash(state);
+            if(!ops.contains(hash) || action.size()<ops[hash].size())
+                ops[hash]=action;
+
+            // for(const auto& d3: VS{"r","d","f"})for(int i3: VI{0, X-1})REP(sign3, 2){
+            //     const auto a3=(sign3?"":"-")+d3+to_string(i3);
+
+            //     action=action_encode(a1+"."+a2+"."+a3);
+            //     state=simulation(index, action);
+            //     hash=zhash.hash(state);
+            //     if(!ops.contains(hash) || action.size()<ops[hash].size())
+            //         ops[hash]=action;
+
+
+            //     // for(const auto& d4: VS{"r","d","f"})for(int i4: VI{0, X-1})REP(sign4, 2){
+            //     //     const auto a4=(sign4?"":"-")+d4+to_string(i4);
+
+            //     //     action=action_encode(a1+"."+a2+"."+a3+"."+a4);
+            //     //     state=simulation(index, action);
+            //     //     hash=zhash.hash(state);
+            //     //     if(!ops.contains(hash) || action.size()<ops[hash].size())
+            //     //         ops[hash]=action;
+            //     // }
+            // }
         }
     }
+    VVI magics;
+    for(auto&[key,value]:ops)
+        magics.emplace_back(value);
     dump(SZ(magics))
     return magics;
 }
 
-VVI get_magic4_4(){
-    // r2.r2.-f1.-f2.-f3.-f4.
-    // -r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.d5.d5.-r2.
-    // f4.f3.f2.f1.-r2.-r2
-    VVI magics;
-    for(auto d1: VS{"r","d","f"})FOR(i1, 1, X-1)for(int pm1i: VI{0, 1}){
-        const auto d1_str1=(pm1i?"":"-")+d1+to_string(i1);
-        const auto d1_str1inv=(pm1i?"-":"")+d1+to_string(i1);
-        for(auto d2: VS{"r","d","f"})for(int pm2: VI{0, 1}){
-            if(d1==d2) continue;
-            auto d2_str=(pm2?"":"-")+d2+to_string(1);
-            FOR(i2,2,X-1) d2_str=d2_str+string(".")+(pm2?"":"-")+d2+to_string(i2);
-            auto fronts=action_encode(d1_str1+"."+d1_str1+"."+d2_str);
-            auto backs=inverse_action(fronts);
-            for(auto d3: VS{"r","d","f"})for(int i3: VI{0, X-1}){
-                if(d1==d3||d2==d3) continue;
-                const auto d3_str_d3_str=d3+to_string(i3)+"."+d3+to_string(i3);
-                auto tmp=d1_str1inv+"."+d3_str_d3_str;
-                auto action=fronts;
-                for(int a: action_encode(tmp+"."+tmp+"."+tmp+"."+tmp+"."+d1_str1inv))
-                    action.emplace_back(a);
-                action.insert(action.end(), backs.begin(), backs.end());
-                magics.emplace_back(action);
-
-                // magics.emplace_back(action);
-            }
-        }
-    }
-    dump(SZ(magics))
-    return magics;
-}
-
-
-// センターを揃える
-VVI get_magic5_1(){
-    // r1.-d5.r4.d5.-r1.-d5.-r4.d5
-    VVI magics;
-    for(auto d1: VS{"r","d","f"})FOR(i1a, 1, X-1)for(int pm1a: VI{0, 1}){
-        const auto d1a_str=(pm1a?"":"-")+d1+to_string(i1a);
-        const auto d1a_strinv=(pm1a?"-":"")+d1+to_string(i1a);
-        FOR(i1b, 1, X-1)for(int pm1b: VI{0, 1}){
-            if(i1b==i1a)continue;
-            const auto d1b_str=(pm1b?"":"-")+d1+to_string(i1b);
-            const auto d1b_strinv=(pm1b?"-":"")+d1+to_string(i1b);
-            for(auto d2: VS{"r","d","f"})for(int i2: VI{0, X-1})for(int pm2: VI{0, 1}){
-                if(d1==d2) continue;
-                const auto d2_str=(pm2?"":"-")+d2+to_string(i2);
-                const auto d2_strinv=(pm2?"-":"")+d2+to_string(i2);
-                auto action=action_encode(d1a_str+"."+d2_strinv+"."+d1b_str+"."+d2_str+"."+d1a_strinv+"."+d2_strinv+"."+d1b_strinv+"."+d2_str);
-                magics.emplace_back(action);
-            }
-        }
-    }
-    dump(SZ(magics))
-    return magics;
-}
-
-
-VI greedy_center(const VI &init_state){
+optional<VI> greedy_center(const VI &init_state, int retry_num=100){
+    // TODO: 順序を維持する
     auto magics=get_magic4_1();
     for(auto &m:get_magic5_1())
         magics.emplace_back(m);
-    VVI help_magic;
-    for(auto d: VS{"r","d","f"})for(int i: VI{0, X-1})for(int pm: VI{0, 1}){
-        const auto d_str=(pm?"":"-")+d+to_string(i);
-        help_magic.emplace_back(action_encode(d_str));
-    }
+    auto help_magic=get_rotate_panel();
     //
     VVI centers;
     centers.emplace_back(solution_state);
@@ -1629,54 +1824,140 @@ VI greedy_center(const VI &init_state){
         }
         return score;
     };
-    VI result;
-    auto state=init_state;
-    RFOR(intercept, 1, X/2){
-        dump(intercept)
-        int score=calc_score(state,intercept);
+    REP(_,retry_num){
+        VI result;
+        auto state=init_state;
+        bool fail=false;
+        RFOR(intercept, 1, X/2)if(!fail){
+            // intercept=1;
+            dump(intercept)
+            int score=calc_score(state,intercept);
 
-
-        int help_num=0;
-        while(score!=0){
-            shuffle(ALL(magics), rand_engine);
-            bool update=false;
-            dump(score)
-            auto s=state;
-            if(help_num>=0)
-                s=simulation(state, help_magic[help_num]);
-            for(auto &magic: magics){
-                auto t=simulation(s, magic);
-                int t_score=calc_score(t, intercept);
-                if(score>t_score){
-                    score=t_score;
-                    state=t;
-                    if(help_num>=0)
-                        result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
-                    result.insert(result.end(), magic.begin(), magic.end());
-                    update=true;
-                    break;
+            int help_num=0;
+            while(score!=0){
+                shuffle(ALL(magics), rand_engine);
+                bool update=false;
+                dump(score)
+                auto s=state;
+                if(help_num>=0)
+                    s=simulation(state, help_magic[help_num]);
+                for(auto &magic: magics){
+                    auto t=simulation(s, magic);
+                    int t_score=calc_score(t, intercept);
+                    if(score>t_score){
+                        score=t_score;
+                        state=t;
+                        if(help_num>=0)
+                            result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
+                        result.insert(result.end(), magic.begin(), magic.end());
+                        update=true;
+                        break;
+                    }
                 }
+                if(!update){
+                    help_num++;
+                    dump(help_num)
+                    if(help_num>=SZ(help_magic)){
+                        OUT("fail");
+                        fail=true;
+                        break;
+                    }
+                }else help_num=-1;
             }
-            if(!update){
-                help_num++;
-                dump(help_num)
-                if(help_num>=SZ(help_magic)){
-                    OUT("fail");
-                    break;
-                }
-            }else help_num=-1;
+            dump(score)
         }
-        dump(score)
+        if(!fail)
+            return result;
     }
-    return result;
+    return nullopt;
 }
 
-VI greedy_edge(const VI &init_state){
+// VI greedy_center_corner(const VI &init_state, int intercept){
+//     // TODO: 順序を維持する
+//     auto magics=get_magic4_1();
+//     auto help_magic=get_rotate_panel();
+//     //
+//     VVI centers;
+//     centers.emplace_back(solution_state);
+//     REP(r,3){
+//         auto state=solution_state;
+//         auto &prev=centers.back();
+//         REP(t, 6)REP(i,X)REP(j,X){
+//             state[X*X*t+j*X+i]=prev[X*X*t+(X-1-i)*X+j];
+//         }
+//         centers.emplace_back(state);
+//     }
+
+//     auto calc_score=[&](const VI &state, int intercept){
+//         int score=0;
+//         REP(t, 6){
+//             int minval=INF;
+//             for(auto& center: centers){
+//                 int val=0;
+//                 FOR(i, intercept, X-intercept)FOR(j, intercept, X-intercept){
+//                     if((i==intercept||i==X-intercept-1) ^ (j==intercept||j==X-intercept-1))
+//                         continue;
+//                     int idx=X*X*t+i*X+j;
+//                     if(state[idx]!=center[idx])val++;
+//                 }
+//                 minval=min(minval,val);
+//             }
+//             score+=minval;
+//         }
+//         return score;
+//     };
+//     VI result;
+//     auto state=init_state;
+//     // RFOR(intercept, 1, X/2)
+//     {
+//         // intercept=1;
+//         dump(intercept)
+//         int score=calc_score(state,intercept);
+
+//         int help_num=0;
+//         while(score!=0){
+//             shuffle(ALL(magics), rand_engine);
+//             bool update=false;
+//             dump(score)
+//             auto s=state;
+//             if(help_num>=0)
+//                 s=simulation(state, help_magic[help_num]);
+//             for(auto &magic: magics){
+//                 auto t=simulation(s, magic);
+//                 int t_score=calc_score(t, intercept);
+//                 if(score>t_score){
+//                     score=t_score;
+//                     state=t;
+//                     if(help_num>=0)
+//                         result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
+//                     result.insert(result.end(), magic.begin(), magic.end());
+//                     update=true;
+//                     break;
+//                 }
+//             }
+//             if(!update){
+//                 help_num++;
+//                 dump(help_num)
+//                 if(help_num>=SZ(help_magic)){
+//                     OUT("fail");
+//                     break;
+//                 }
+//             }else help_num=-1;
+//         }
+//         dump(score)
+//     }
+//     return result;
+// }
+
+optional<VI> greedy_edge(const VI &init_state, int retry_num=100){
     auto magics=get_magic4_2();
     for(auto &m:get_magic4_3())
         magics.emplace_back(m);
-    // for(auto &m:get_magic4_4())
-    //     magics.emplace_back(m);
+    for(auto &m:get_magic4_4())
+        magics.emplace_back(m);
+    auto help_magic=get_rotate_panel();
+    for(auto &m:get_help_magic())
+        help_magic.emplace_back(m);
 
     VVI edges;
     REP(t, 6){
@@ -1726,11 +2007,106 @@ VI greedy_edge(const VI &init_state){
         }
         return score;
     };
+    REP(_,retry_num){
+        VI result;
+        auto state=init_state;
+        bool fail=false;
+        RFOR(intercept, 1, X/2)if(!fail){
+            // intercept=1;
+            dump(intercept)
+            int help_num=-1;
+            int score=calc_score(state,intercept);
+
+            while(score!=0){
+                shuffle(ALL(magics), rand_engine);
+                bool update=false;
+                dump(score)
+                auto s=state;
+                if(help_num>=0)
+                    s=simulation(state, help_magic[help_num]);
+                for(auto &magic: magics){
+                    auto t=simulation(s, magic);
+                    int t_score=calc_score(t, intercept);
+                    if(score>t_score){
+                        score=t_score;
+                        state=t;
+                        if(help_num>=0)
+                            result.insert(result.end(), help_magic[help_num].begin(), help_magic[help_num].end());
+                        result.insert(result.end(), magic.begin(), magic.end());
+                        update=true;
+                        break;
+                    }
+                }
+                if(!update){
+                    help_num++;
+                    dump(help_num)
+                    if(help_num>=SZ(help_magic)){
+                        OUT("fail");
+                        fail=true;
+                        break;
+                    }
+                }else help_num=-1;
+            }
+            dump(score)
+        }
+        if(!fail)
+            return result;
+    }
+    return nullopt;
+}
+
+VI greedy_edge2(const VI &init_state){
+    auto magics=get_magic4_2();
+    for(auto &m:get_magic4_3())
+        magics.emplace_back(m);
+    // for(auto &m:get_magic4_4())
+    //     magics.emplace_back(m);
+
+    VVI centers;
+    centers.emplace_back(solution_state);
+    REP(r,3){
+        auto state=solution_state;
+        auto &prev=centers.back();
+        REP(t, 6)REP(i,X)REP(j,X){
+            state[X*X*t+j*X+i]=prev[X*X*t+(X-1-i)*X+j];
+        }
+        centers.emplace_back(state);
+    }
+
+    auto calc_score=[&](const VI &state, int intercept){
+        int score=0;
+        REP(t, 6){
+            for(int i: VI{0, X-1}){
+                int minval=INF;
+                for(auto& panel: centers){
+                    int val=0;
+                    FOR(j, intercept, X-intercept){
+                        if(state[X*X*t+i*X+j]!=panel[X*X*t+i*X+j])val++;
+                    }
+                    minval=min(minval,val);
+                }
+                score+=minval;
+            }
+            for(int j: VI{0, X-1}){
+                int minval=INF;
+                for(auto& panel: centers){
+                    int val=0;
+                    FOR(i, intercept, X-intercept){
+                        if(state[X*X*t+i*X+j]!=panel[X*X*t+i*X+j])val++;
+                    }
+                    minval=min(minval,val);
+                }
+                score+=minval;
+            }
+        }
+        return score;
+    };
     auto help_magic=get_help_magic();
 
     VI result;
     auto state=init_state;
     RFOR(intercept, 1, X/2){
+        // int intercept=X/2-1;
         dump(intercept)
         int help_num=-1;
         int score=calc_score(state,intercept);
@@ -1772,15 +2148,17 @@ VI greedy_edge(const VI &init_state){
 
 
 
-const string DATA_DIR = "./data/";
+
+
+const string PROBLEM_DATA_DIR = "./data/";
 map<string, int> TARGET{
     //    {"cube_2/2/2", 5},
     //    {"cube_3/3/3", 4},
     //    {"cube_4/4/4", 4},
     //    {"cube_5/5/5", 3},
-       {"cube_6/6/6", 3},
+    //    {"cube_6/6/6", 3},
     //    {"cube_7/7/7", 3},
-    //    {"cube_8/8/8", 3},
+       {"cube_8/8/8", 3},
     //    {"cube_9/9/9", 3},
     //    {"cube_10/10/10", 3},
     //    {"cube_19/19/19", 2},
@@ -1802,20 +2180,35 @@ map<string, int> TARGET{
     //    {"globe_8/25", 2}
 };
 
+VI greedy_solver(){
+    auto result1=greedy_center(initial_state);
+    assert(result1.has_value());
+    dump(action_decode(result1.value()))
+
+    auto state=simulation(initial_state, result1.value());
+    auto result2=greedy_edge(state);
+    dump(action_decode(result2.value()))
+
+    VI path=result1.value();
+    path.insert(path.end(), result2.value().begin(), result2.value().end());
+    dump(action_decode(path))
+    return path;
+}
+
 int main() {
     ChronoTimer timer;
     int case_num = 398;
     double sum_score = 0.0;
     double sum_log_score = 0.0;
     int64_t max_time = 0;
-    // REP(i, case_num){
-    FOR(i, 255, 256+1){
-    // RFOR(i, 255, 256+1){
+    REP(i, case_num){
+    // FOR(i, 255, 256+1){
+    // FOR(i, 245, 256+1){
         timer.start();
         dump(SEED)
         rand_engine.seed(SEED);
         string input_filename = to_string(i) + ".txt";
-        string file_path = DATA_DIR + input_filename;
+        string file_path = PROBLEM_DATA_DIR + input_filename;
         ifstream ifs(file_path);
         assert(!ifs.fail());
         data_load(ifs);
@@ -1827,21 +2220,14 @@ int main() {
 
         string output_filename="output/"+to_string(i)+".txt";
 
-        ARANGE(solution_state);
-        initial_state=simulation_inverse(solution_state, load_actions(output_filename));
-        // ARANGE(initial_state);
-        // solution_state=simulation(initial_state, load_actions(output_filename));
-        label_mapping.clear();
-        REP(i, state_length)
-            label_mapping["N"+to_string(i)]=i;
-
-        // auto path=action_encode("f3.r2.-d3.-f5.r5.d3.r0.-r5.-d3.f0.-r0.d0.-f2.-d3.f2.r0.-f5.d0.f5.r2.d0.d0.-r2.-d3.f5.d3.f5.r5.d3.f2.-r5.d3.d3.-f2.d3.f2.r5.-f2.-r5.r5.d5.f2.-d5.-f2.d5.f3.-d5.-f3.-d5.f4.d1.r1.-f1.d4.r1.-r1.-d1.r1.f1.r4.f1.-r4.-f5.-f5.-f5.f0.-d1.-d1.-f0.-r5.-r5.-r5.d1.-r0.-r0.-r0.-d1.-d1.r5.d1.-r5.-r5.-f4.-f4.-r5.f4.f4.r5.-r0.-r0.-d1.-d1.r0.-r0.-r0.d1.d1.d0.d0.r4.-d0.-d0.-d0.-r4.d0.-d0.r0.r0.d0.-f1.r0.f1.r0.r0.r0.-f1.r0.r0.r0.f1.r0.-d4.-r0.d4.r0.-f5.-r0.-d4.-r0.d4.r0.r0.d4.f5.f5.f5.-d4.f5.f5.d4.-f5.-f5.-f5.-d4.-f5.-f5.d1.f5.d4.-f5.-d1.f5.-d4.-f5.d5.r1.d5.r3.-d5.-r1.d5.-r3.-d5.-f2.-d5.-f1.d5.f2.-d5.f1.d5.-d5.-r1.d5.-r2.-d5.r1.d5.r2.-d5.-d5.r5.f1.-d5.f2.d5.-f1.-d5.-f2.r3.r2.-f0.r1.f0.-r3.-r2.-f0.-r1.f0.r2.d5.r1.-d5.-r2.d5.-r1.-d5.-d5.-d5.f0.-r2.-f0.-r4.f0.r2.-f0.r4.f0.r4.-d5.r2.d5.-r4.-d5.-r2.d5.d2.r5.d4.-r5.-d2.r5.-d4.-r5.r5.-d1.f5.-d3.-f5.d1.f5.d3.-f5.f5.-r3.f5.-r1.-f5.r3.f5.r1.-f5.f5.f5.-r1.f5.-r2.-f5.r1.f5.r2.-d0.-d0.-d0.f5.-r1.f5.-r2.-f5.r1.f5.r2.-f5.f5.f5.d4.f5.d3.-f5.-d4.f5.-d3.-f5.d2.r0.d4.-r0.-d2.r0.-d4.-r0.r0.d4.f5.d2.-f5.-d4.f5.-d2.-f5.-f5.-f5.d2.-f5.d4.f5.-d2.-f5.-d4.f5.-f5.-r5.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.f0.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.r5.d0.d0.f3.-r5.f1.r5.-f3.-r5.-f1.r5.-d4.-f0.-d3.f0.d4.-f0.d3.f0.f0.-d2.-f0.-d1.f0.d2.-f0.d1.f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.r4.-f0.r3.f0.-r4.-f0.-r3.f0.r2.-f0.r4.f0.-r2.-f0.-r4.f0.r3.-f0.r1.f0.-r3.-f0.-r1.f0.-d0.r3.-f0.r4.f0.-r3.-f0.-r4.f0.d0.f3.d0.f1.-d0.-f3.d0.-f1.-d0.f1.d0.f3.-d0.-f1.d0.-f3.-d0.-r0.-r0.f4.d0.f2.-d0.-f4.d0.-f2.-d0.-d0.-d0.-d0.f2.d0.f4.-d0.-f2.d0.-f4.-d0.-d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.r0.r0.-r0.r0.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-r0.-r0.-r0.d2.-r0.d1.r0.-d2.-r0.-d1.r0.d2.r0.d4.-r0.-d2.r0.-d4.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-f0.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.-r2.f0.d5.r0.-f0.-d5.r2.-r3.-f0.r0.f0.r3.d0.-f0.-r2.-f0.r0.f0.r2.-d5.-r2.-f0.r0.f0.r2.-d5.f5.d5.r5.-r0.-f0.r3.d5.-r5.-d5.-r3.-f0.-d5.-f0.-r0.-d5.d0.r0.-f0.-f0.d5.d5.-d0.-r3.-f0.r0.f0.r3");
-        // auto path=action_encode("f3.r2.-d3.-f5.r5.d3.r0.-r5.-d3.f0.-r0.d0.-f2.-d3.f2.r0.-f5.d0.f5.r2.d0.d0.-r2.-d3.f5.d3.f5.r5.d3.f2.-r5.d3.d3.-f2.d3.f2.r5.-f2.-r5.r5.d5.f2.-d5.-f2.d5.f3.-d5.-f3.-d5.f4.d1.r1.-f1.d4.r1.-r1.-d1.r1.f1.r4.f1.-r4.-f5.-f5.-f5.f0.-d1.-d1.-f0.-r5.-r5.-r5.d1.-r0.-r0.-r0.-d1.-d1.r5.d1.-r5.-r5.-f4.-f4.-r5.f4.f4.r5.-r0.-r0.-d1.-d1.r0.-r0.-r0.d1.d1.d0.d0.r4.-d0.-d0.-d0.-r4.d0.-d0.r0.r0.d0.-f1.r0.f1.r0.r0.r0.-f1.r0.r0.r0.f1.r0.-d4.-r0.d4.r0.-f5.-r0.-d4.-r0.d4.r0.r0.d4.f5.f5.f5.-d4.f5.f5.d4.-f5.-f5.-f5.-d4.-f5.-f5.d1.f5.d4.-f5.-d1.f5.-d4.-f5.d5.r1.d5.r3.-d5.-r1.d5.-r3.-d5.-f2.-d5.-f1.d5.f2.-d5.f1.d5.-d5.-r1.d5.-r2.-d5.r1.d5.r2.-d5.-d5.r5.f1.-d5.f2.d5.-f1.-d5.-f2.r3.r2.-f0.r1.f0.-r3.-r2.-f0.-r1.f0.r2.d5.r1.-d5.-r2.d5.-r1.-d5.-d5.-d5.f0.-r2.-f0.-r4.f0.r2.-f0.r4.f0.r4.-d5.r2.d5.-r4.-d5.-r2.d5.d2.r5.d4.-r5.-d2.r5.-d4.-r5.r5.-d1.f5.-d3.-f5.d1.f5.d3.-f5.f5.-r3.f5.-r1.-f5.r3.f5.r1.-f5.f5.f5.-r1.f5.-r2.-f5.r1.f5.r2.-d0.-d0.-d0.f5.-r1.f5.-r2.-f5.r1.f5.r2.-f5.f5.f5.d4.f5.d3.-f5.-d4.f5.-d3.-f5.d2.r0.d4.-r0.-d2.r0.-d4.-r0.r0.d4.f5.d2.-f5.-d4.f5.-d2.-f5.-f5.-f5.d2.-f5.d4.f5.-d2.-f5.-d4.f5.-f5.-r5.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.f0.-d3.r5.-d1.-r5.d3.r5.d1.-r5.r5.-d4.r5.-d2.-r5.d4.r5.d2.-r5.r5.d0.d0.f3.-r5.f1.r5.-f3.-r5.-f1.r5.-d4.-f0.-d3.f0.d4.-f0.d3.f0.f0.-d2.-f0.-d1.f0.d2.-f0.d1.f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.r4.-f0.r3.f0.-r4.-f0.-r3.f0.r2.-f0.r4.f0.-r2.-f0.-r4.f0.r3.-f0.r1.f0.-r3.-f0.-r1.f0.-d0.r3.-f0.r4.f0.-r3.-f0.-r4.f0.d0.f3.d0.f1.-d0.-f3.d0.-f1.-d0.f1.d0.f3.-d0.-f1.d0.-f3.-d0.-r0.-r0.f4.d0.f2.-d0.-f4.d0.-f2.-d0.-d0.-d0.-d0.f2.d0.f4.-d0.-f2.d0.-f4.-d0.-d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.d0.f4.d0.f3.-d0.-f4.d0.-f3.-d0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d3.-f0.d4.f0.d3.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.-r0.-d4.f0.-d2.-f0.d4.f0.d2.-f0.r0.r0.-r0.r0.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-r0.-r0.-r0.d2.-r0.d1.r0.-d2.-r0.-d1.r0.d2.r0.d4.-r0.-d2.r0.-d4.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.-f0.-f0.-f0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.d4.-r0.d2.r0.-d4.-r0.-d2.r0.f0.f0.r0");
-        auto path=action_encode("-d2.-f3.d2.-f5.-d3.f2.-d3.-f3.-d3.-d2.-r2.d0.d0.r2.d2.-r0.-d2.f0.f5.f5.d2.-d3.-r0.-r5.d3.-r0.-f3.-d3.r0.d3.f3.r0.-f5.r2.-f5.-r2.f5.-f3.r0.-f3.-r2.-f0.r2.f3.-r0.f3.-r2.f0.r2.-r0.d1.f5.-d1.f4.d0.-f2.-d0.-f4.d0.f2.-d0.-f2.-r0.f1.r0.f2.-r0.-f1.r0.-d4.r0.d1.-r0.d4.r0.-d1.-r0.-f2.r0.-f4.-r0.f2.r0.f4.-r0.-r4.-d5.r3.d5.r4.-d5.-r3.d5.-f2.d5.-f4.-d5.f2.d5.f4.-d5.-d2.f0.-d1.-f0.d2.f0.d1.-f0.-d1.-f0.-d3.f0.d1.-f0.d3.f0.-d4.-r0.-d3.r0.d4.-r0.d3.r0.-f4.-r5.-f3.r5.f4.-r5.f3.r5.f1.r5.f4.-r5.-f1.r5.-f4.-r5.r4.-d5.-r2.d5.-r4.-d5.r2.d5.d1.r5.d2.-r5.-d1.r5.-d2.-r5.r4.-d0.r1.d0.-r4.-d0.-r1.d0.d2.-r0.-d4.r0.-d2.-r0.d4.r0.-d1.r5.-d3.-r5.d1.r5.d3.-r5.f1.-d0.-f3.d0.-f1.-d0.f3.d0.f4.-d5.f1.d5.-f4.-d5.-f1.d5.-f4.-r0.-f3.r0.f4.-r0.f3.r0.-r3.-f5.r1.f5.r3.-f5.-r1.f5.d4.f5.d2.-f5.-d4.f5.-d2.-f5.f4.d5.-f3.-d5.-f4.d5.f3.-d5.f1.d0.f4.-d0.-f1.d0.-f4.-d0.d2.r0.d1.-r0.-d2.r0.-d1.-r0.d1.f0.-d4.-f0.-d1.f0.d4.-f0.f1.-r5.-f4.r5.-f1.-r5.f4.r5.f3.-r0.f1.r0.-f3.-r0.-f1.r0.-d2.-r5.-d4.r5.d2.-r5.d4.r5.-f2.-d0.f1.d0.f2.-d0.-f1.d0.r1.-f5.r4.f5.-r1.-f5.-r4.f5.-f1.r5.f2.-r5.f1.r5.-f2.-r5.-r4.f5.-r3.-f5.r4.f5.r3.-f5.-d4.-f0.-d1.f0.d4.-f0.d1.f0.d4.f5.d1.-f5.-d4.f5.-d1.-f5.-f3.d5.f4.-d5.f3.d5.-f4.-d5.-f3.-d5.-f1.d5.f3.-d5.f1.d5.f1.-d0.f3.d0.-f1.-d0.-f3.d0.-r0.-d1.-r0.-d2.r0.d1.-r0.d2.r0.-f1.d5.-f2.-d5.f1.d5.f2.-d5.-d3.-f5.d1.f5.d3.-f5.-d1.f5.d3.-f5.d1.f5.-d3.-f5.-d1.f5.-r0.-d4.r0.-d3.-r0.d4.r0.d3.-r0.-r0.d2.r0.d1.-r0.-d2.r0.-d1.-r0.-d0.r1.-f0.-r2.f0.-r1.-f0.r2.f0.-r1.-d0.r2.d0.r1.-d0.-r2.d0.-r3.-d0.r4.d0.r3.-d0.-r4.d0.-d0.r1.-f5.-r4.f5.-r1.-f5.r4.f5.f1.r5.-f4.-r5.-f1.r5.f4.-r5.-r1.-f0.r4.f0.r1.-f0.-r4.f0.-d5.-r1.-d5.-r4.d5.r1.-d5.r4.d5.-r2.f5.r4.-f5.r2.f5.-r4.-f5.-f0.-r4.-d0.r2.d0.r4.-d0.-r2.d0.-f0.-r1.-d5.r4.d5.r1.-d5.-r4.d5");
-        // path=greedy_center(simulation(initial_state, path));
-        path=greedy_edge(simulation(initial_state, path));
-        dump(action_decode(path))
-        exit(1);
+        // ARANGE(solution_state);
+        // initial_state=simulation_inverse(solution_state, load_actions(output_filename));
+        // // ARANGE(initial_state);
+        // // solution_state=simulation(initial_state, load_actions(output_filename));
+        // label_mapping.clear();
+        // REP(i, state_length)
+        //     label_mapping["N"+to_string(i)]=i;
+        greedy_solver();
 
         // score = cube_solver();
 

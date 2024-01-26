@@ -2563,7 +2563,6 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
                     tmp.insert(tmp.end(), a2.begin(), a2.end());
                     tmp.insert(tmp.end(), a1.begin(), a1.end());
                     int j;
-                    // TODO: グループIDが同じものでよいのか確認
                     for(j=i+len1+len2; j<SZ(actions) && g1_back==get_group_id(actions[j]); ++j)
                         tmp.emplace_back(actions[j]);
                     int sz=SZ(tmp);
@@ -2723,6 +2722,31 @@ VI shorter_subactions(const VI& actions){
     return result;
 }
 
+VI delete_for_wildcard(const VI& actions, int length){
+    if(num_wildcards==0)return actions;
+    VI result;
+    auto state=initial_state;
+    REP(i, SZ(actions)){
+        if(i%100==0)
+            OUT(i,"/",SZ(actions));
+        FOR(j, i+1, min(i+length+1, SZ(actions))){
+            // MEMO: 高速化可能
+            auto s=state;
+            FOR(k, j, SZ(actions))
+                s=do_action(s, actions[k]);
+            int mistakes=get_mistakes(s);
+            if(mistakes<=num_wildcards){
+                OUT("delete", j-i);
+                i=j;
+                break;
+            }
+        }
+        result.emplace_back(actions[i]);
+        state=do_action(state, actions[i]);
+    }
+    return result;
+}
+
 // 解の圧縮
 int compression(
     const string &input_filename, 
@@ -2731,6 +2755,7 @@ int compression(
     int depth, // depthステップ先まで状態生成する
     int search_step=INF, // どれだけ先まで合流先を見るか
     int swap_search_length=50, // どの長さまでの合成操作を見るか
+    int delete_length=20, // 削除する最大長
     int rotate_intercept=0, // 平行な複数動作を他を動かすことで実現し、最後に帳尻合わせする。基本0でいいが1や-1で改善することもある。globeの33/25あたりだと計算が終わらないことがある
     bool can_rotate=false, // あらゆる回転状態を考慮する globeの33/25あたりだと計算が終わらない
     int random_prune=0 // 0でいい。状態候補生成時にこのパーセンテージで枝刈りする
@@ -2758,6 +2783,7 @@ int compression(
             // // result = kstep_replace(result, depth, true);
             // // result = kstep_replace(result, depth, false);
         }CASE 2:{
+            result = delete_for_wildcard(result, delete_length);
             result = find_swap_loop(output_filename, result, swap_search_length);
         }CASE 3:{
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
@@ -3280,6 +3306,7 @@ int main(int argc, char *argv[]){
             TARGET[puzzle_type].first, // このステップ先まで候補生成
             100, // このステップ先まで合流可能か確認
             50, // 可換チェックする合成操作の最大長
+            20, // 削除チェックする最大長
             0, // 平行な複数動作を他を動かすことで実現する基準
             TARGET[puzzle_type].second, // 回転考慮
             0
