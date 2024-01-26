@@ -155,8 +155,8 @@ template <class Head> void IN(Head&& head) {cin >> head;}
 template <class Head, class... Tail> void IN(Head&& head, Tail&&... tail) {cin >> head;IN(forward<Tail>(tail)...);}
 
 // 乱数
-const int SEED = random_device()();
-// constexpr int SEED = 1;
+// const int SEED = random_device()();
+constexpr int SEED = 1;
 mt19937 rand_engine(SEED);
 // [0,1)
 inline double get_rand(){
@@ -2498,24 +2498,36 @@ VI rotate_skip(const VI& action){
 }
 
 VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
-    VI result;
+    VI index(state_length);
+    ARANGE(index);
+
     auto state=initial_state;
+    VVI states{state};
+    REP(i, SZ(actions)){
+        state=do_action(state, actions[i]);
+        states.emplace_back(state);
+    }
+
+    VI result;
     int i;
     for(i=0;i< SZ(actions);){
         if(i%100==0) OUT(i, "/", SZ(actions));
         bool update=false;
+
+        VVI ops;
+        auto op=index;
+        REP(k, length)if(i+k<SZ(actions)){
+            op=do_action(op, actions[i+k]);
+            ops.emplace_back(op);
+        }
+
         VI a1;
-        auto s1_tmp=state;
         FOR(len1, 1, min(length+1, SZ(actions)-i))if(!update){
-            s1_tmp=do_action(s1_tmp, actions[i+len1-1]);
             a1.emplace_back(actions[i+len1-1]);
-            
-            auto s1=s1_tmp;
-            auto s2_tmp=state;
+            auto s2_tmp=states[i];
 
             VI a2;
             FOR(len2, 1, min(length+1, SZ(actions)-i-len1)){
-                s1=do_action(s1, actions[i+len1+len2-1]);
                 s2_tmp=do_action(s2_tmp, actions[i+len1+len2-1]);
                 a2.emplace_back(actions[i+len1+len2-1]);
                 //
@@ -2526,8 +2538,8 @@ VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
                 if(!(a1!=a2 && (g1_front!=g2_front || g1_back!=g2_back || g1_front==g2_back)))
                     continue;
                 //
-                auto s2=s2_tmp;
-                REP(k, len1) s2=do_action(s2, actions[i+k]);
+                const auto &s1=states[i+len1+len2];
+                auto s2=do_action(s2_tmp, ops[len1-1]);
                 if(s1!=s2) continue;
                 // OUT("can swap", a1, a2);
                 if(g1_front==g2_back || (g1_front!=g2_front && !result.empty() && get_group_id(result.back())==g2_front)){
@@ -2622,9 +2634,62 @@ VI find_swap_loop(const string &output_filename, const VI& actions, int swap_sea
     return result;
 }
 
-// TODO: 同じ問題タイプをすべて使う
+// unordered_map<uint64_t, VI> load_database(){
+//     string filename="database/"+kind+"_"+to_string(X)+"_"+to_string(Y)+".txt";
+//     if(!file_exists(filename))return unordered_map<uint64_t, VI>();
+
+//     ifstream ifs(filename);
+//     size_t sz; ifs>>sz;
+//     unordered_map<uint64_t, VI> shortest(sz);
+//     for(size_t i=0; i<sz; ++i){
+//         uint64_t key; ifs>>key;
+//         size_t len; ifs>>len;
+//         VI action(len); ifs>>action;
+//         shortest[key]=action;
+//     }
+//     ifs.close();
+//     return shortest;
+// }
+
+// void update_database(const VI &actions){
+//     rand_engine.seed(1);
+//     ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
+//     VI index(state_length);
+//     // hash -> actions
+//     unordered_map<uint64_t, VI> shortest=load_database();
+//     bool update=false;
+//     REP(i, SZ(actions)){
+//         if(i%100==0)dump(i);
+//         ARANGE(index);
+//         VI subactions;
+//         FOR(j, i, SZ(actions)){
+//             subactions.emplace_back(actions[j]);
+//             index=do_action(index, actions[j]);
+//             auto hash=zhash.hash(index);
+//             auto it=shortest.find(hash);
+//             if(it==shortest.end() || it->second.size()>subactions.size()){
+//                 shortest[hash]=subactions;
+//                 update=true;
+//             }
+//         }
+//     }
+//     if(update){
+//         OUT("update database");
+//         ofstream ofs("database/"+kind+"_"+to_string(X)+"_"+to_string(Y)+".txt");
+//         ofs<<shortest.size()<<endl;
+//         for(auto &[key, value]: shortest){
+//             ofs<<key<<" "<<value.size();
+//             for(int a: value)
+//                 ofs<<" "<<a;
+//             ofs<<endl;
+//         }
+//         ofs.close();
+//     }
+// }
+
 // 解の系列の中で存在するより短い別表現に置き換える
 VI shorter_subactions(const VI& actions){
+    // rand_engine.seed(1);
     ZobristHashing<uint64_t> zhash(state_length, state_length, rand_engine);
     VI index(state_length);
     // hash -> [start, end]
@@ -2657,6 +2722,7 @@ VI shorter_subactions(const VI& actions){
         }
     }
     if(!updatable)return actions;
+    // auto shortest=load_database();
     VI result;
     REP(i, SZ(actions)){
         if(i%100==0)dump(i);
@@ -2665,6 +2731,10 @@ VI shorter_subactions(const VI& actions){
         FOR(j, i, SZ(actions)){
             index=do_action(index, actions[j]);
             auto hash=zhash.hash(index);
+            // auto it = shortest.find(hash);
+            // if(it!=shortest.end() && SZ(it->second)<j-i+1){
+                // OUT("update", j-i+1 - SZ(it->second));
+                // result.insert(result.end(), it->second.begin(), it->second.end());
             auto [pi,pj]=shortest[hash];
             if(pj-pi<j-i){
                 OUT("update", (j-i)-(pj-pi));
@@ -2672,7 +2742,8 @@ VI shorter_subactions(const VI& actions){
                 i=j;
                 update=true;
                 break;
-            }else if(pj-pi==j-i){
+            }
+            else if(pj-pi==j-i){
                 bool same=true;
                 for(int k1=pi, k2=i;same && k1<=pj && k2<=j; ++k1, ++k2)if(get_group_id(actions[k1])!=get_group_id(actions[k2]))
                     same=false;
@@ -2724,17 +2795,23 @@ VI shorter_subactions(const VI& actions){
 
 VI delete_for_wildcard(const VI& actions, int length){
     if(num_wildcards==0)return actions;
+    VI index(state_length);
+    ARANGE(index);
+
+    VVI ops(actions.size());
+    RREP(i, SZ(actions)){
+        index=product(index, actions[i]);
+        ops[i]=index;
+    }
+
     VI result;
     auto state=initial_state;
     REP(i, SZ(actions)){
+        // assert(get_mistakes(do_action(state, ops[i]))<=num_wildcards);
         if(i%100==0)
             OUT(i,"/",SZ(actions));
         FOR(j, i+1, min(i+length+1, SZ(actions))){
-            // MEMO: 高速化可能
-            auto s=state;
-            FOR(k, j, SZ(actions))
-                s=do_action(s, actions[k]);
-            int mistakes=get_mistakes(s);
+            int mistakes=get_mistakes(do_action(state, ops[j]));
             if(mistakes<=num_wildcards){
                 OUT("delete", j-i);
                 i=j;
@@ -2777,7 +2854,7 @@ int compression(
                 result = rotate_skip(result);
                 result = summerize_rotate(result, rotate_intercept);
             }
-            // result = loop_compress(result);
+            result = loop_compress(result);
             // result = shorter_subactions(result);
             // result = kstep_replace(result, depth);
             // // result = kstep_replace(result, depth, true);
@@ -2789,6 +2866,8 @@ int compression(
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
             // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
             // result = greedy_improve(result, depth);
+        // }CASE 4:{
+        //     update_database(result);
         }DEFAULT:{
             cerr<<"unsupported mode: "<<mode<<endl;
             exit(1);
@@ -3253,7 +3332,6 @@ int main(int argc, char *argv[]){
     string output_dir = (argv[1]);
     string input_dir = (argv[2]);
     int mode = atoi(argv[3]);
-    assert(0<=mode&& mode<=3);
     int problem_id = (argc==5) ? atoi(argv[4]) : -1;
 
     ChronoTimer timer;
