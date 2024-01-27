@@ -3379,8 +3379,8 @@ int main(int argc, char *argv[]){
         cerr<<"- problem_id: optional. "<<endl;
         return 1;
     }
-    string output_dir = (argv[1]);
-    string input_dir = (argv[2]);
+    string input_dir = (argv[1]);
+    string output_dir = (argv[2]);
     int mode = atoi(argv[3]);
     int problem_id = (argc==5) ? atoi(argv[4]) : -1;
 
