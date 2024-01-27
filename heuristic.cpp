@@ -2499,7 +2499,7 @@ VI rotate_skip(const VI& action){
     return result.size()<action.size() ? result : action;
 }
 
-pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0){
+tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF){
     VI index(state_length);
     ARANGE(index);
 
@@ -2512,11 +2512,12 @@ pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int
 
     VI result;
     int next_start=-1;
+    int next_end=-1;
 
     int i;
     for(i=0;i<start;++i)
         result.emplace_back(actions[i]);
-    for(i=start;i< SZ(actions);){
+    for(;i< min(end, SZ(actions));){
         if(i%100==0) OUT(i, "/", SZ(actions));
         bool update=false;
 
@@ -2566,6 +2567,8 @@ pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int
                         state=s1;
                         i+=len1+len2;
                         update=true;
+                        next_end=i;
+                        end=max(end, next_end);
                         break;
                     }
                 }
@@ -2589,6 +2592,8 @@ pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int
                         state=s1;
                         i+=len1+len2;
                         update=true;
+                        next_end=i;
+                        end=max(end, next_end);
                         break;
                     }
                 }
@@ -2612,6 +2617,8 @@ pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int
                         state=states[j];
                         i=j;
                         update=true;
+                        next_end=i;
+                        end=max(end, next_end);
                         break;
                     }
                 }
@@ -2625,7 +2632,7 @@ pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int
     }
     for(; i< SZ(actions); ++i)
         result.emplace_back(actions[i]);
-    return {result, next_start};
+    return {result, next_start, next_end};
 }
 
 
@@ -2634,10 +2641,10 @@ VI find_move_loop(const string &output_filename, const VI& actions, int maxlengt
     auto init_state = inverse ? simulation(initial_state, actions): initial_state;
 
     int size;
-    int next_start=0;
+    int next_start=0, next_end=INF;
     do{
         size=SZ(result);
-        tie(result,next_start)=find_move(init_state, result, maxlength, maxmovesize, next_start);
+        tie(result, next_start, next_end)=find_move(init_state, result, maxlength, maxmovesize, next_start, next_end);
 
         dump(SZ(result))
         int mistake = get_mistakes(simulation(initial_state, inverse ? inverse_action(result) : result));
