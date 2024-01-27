@@ -2500,7 +2500,8 @@ VI rotate_skip(const VI& action){
 }
 
 // tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF, const optional<VVI> &cache=nullopt){
-tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF){
+// tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF){
+pair<VI, unordered_set<int> > find_move(const VI& init_state, const VI &actions, int length, int movesize, unordered_set<int>& skipindex){
     VI index(state_length);
     ARANGE(index);
 
@@ -2525,15 +2526,25 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
         }
     }
 
+    int improve_cumsum=0;
+    unordered_set<int> next_skipindex;
+
     VI result;
-    int next_start=-1;
-    int next_end=-1;
+    // int next_start=-1;
+    // int next_end=-1;
 
     int i;
-    for(i=0;i<start;++i)
-        result.emplace_back(actions[i]);
-    for(;i< min(end, SZ(actions));){
+    // for(i=0;i<start;++i)
+    //     result.emplace_back(actions[i]);
+    // for(;i< min(end, SZ(actions));){
+    for(i=0;i< SZ(actions);){
         if(i%100==0) OUT(i, "/", SZ(actions));
+        if(skipindex.contains(i)){
+            result.emplace_back(actions[i]);
+            next_skipindex.emplace(i-improve_cumsum);
+            ++i;
+            continue;
+        }
         bool update=false;
 
         auto op=index;
@@ -2578,11 +2589,15 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         sz=SZ(result);
                         result=cancel_opposite_loop(result);
                         OUT("improve front1!", sz-SZ(result));
-                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        // if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        improve_cumsum+=sz-SZ(result);
+                        for(int k=max(improve_cumsum, i-length-movesize); k<=i; ++k)
+                            next_skipindex.erase(k-improve_cumsum);
                         i+=len1+len2;
                         update=true;
-                        next_end=i;
-                        end=max(end, next_end);
+                        // next_end=i;
+                        // end=max(end, next_end);
+                        skipindex.erase(i);
                         break;
                     }
                 }
@@ -2602,11 +2617,15 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         sz=SZ(result);
                         result=cancel_opposite_loop(result);
                         OUT("improve front2!", sz-SZ(result));
-                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        // if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        improve_cumsum+=sz-SZ(result);
+                        for(int k=max(improve_cumsum, i-length-movesize); k<=i; ++k)
+                            next_skipindex.erase(k-improve_cumsum);
                         i+=len1+len2;
                         update=true;
-                        next_end=i;
-                        end=max(end, next_end);
+                        // next_end=i;
+                        // end=max(end, next_end);
+                        skipindex.erase(i);
                         break;
                     }
                 }
@@ -2626,11 +2645,15 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         sz=SZ(result);
                         result=cancel_opposite_loop(result);
                         OUT("improve back!", sz-SZ(result));
-                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        // if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        improve_cumsum+=sz-SZ(result);
+                        for(int k=max(improve_cumsum, i-length-movesize); k<=i; ++k)
+                            next_skipindex.erase(k-improve_cumsum);
                         i=j;
                         update=true;
-                        next_end=i;
-                        end=max(end, next_end);
+                        // next_end=i;
+                        // end=max(end, next_end);
+                        skipindex.erase(i);
                         break;
                     }
                 }
@@ -2638,24 +2661,29 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
         }
         if(!update){
             result.emplace_back(actions[i]);
+            next_skipindex.emplace(i-improve_cumsum);
             ++i;
         }
     }
     for(; i< SZ(actions); ++i)
         result.emplace_back(actions[i]);
-    return {result, next_start, next_end};
+    // return {result, next_start, next_end};
+    return {result, next_skipindex};
 }
 
 
 VI find_move_loop(const string &output_filename, const VI& actions, int maxlength, int maxmovesize, bool inverse=false){
     auto result = inverse? inverse_action(actions) : actions;
     auto init_state = inverse ? simulation(initial_state, actions): initial_state;
+    
+    unordered_set<int> skipindex;
 
     int size;
-    int next_start=0, next_end=INF;
+    // int next_start=0, next_end=INF;
     do{
         size=SZ(result);
-        tie(result, next_start, next_end)=find_move(init_state, result, maxlength, maxmovesize, next_start, next_end);
+        // tie(result, next_start, next_end)=find_move(init_state, result, maxlength, maxmovesize, next_start, next_end);
+        tie(result, skipindex)=find_move(init_state, result, maxlength, maxmovesize, skipindex);
 
         dump(SZ(result))
         int mistake = get_mistakes(simulation(initial_state, inverse ? inverse_action(result) : result));
