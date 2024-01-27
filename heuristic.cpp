@@ -3367,22 +3367,25 @@ map<string, pair<int, bool>> TARGET{
 
 int main(int argc, char *argv[]){
     // 
-    if(argc!=4 && argc!=5){
+    if(argc<4 || 7<argc){
         cerr<<"-----------------------------------------"<<endl;
         cerr<<"How to use"<<endl;
         cerr<<"-----------------------------------------"<<endl;
         cerr<<"$ make"<<endl;
-        cerr<<"$ ./heuristic.exe input_dir output_dir mode [problem_id]"<<endl;
+        cerr<<"$ ./heuristic.exe input_dir output_dir mode [problem_id length maxmovesize]"<<endl;
         cerr<<"- input_dir:  {input_dir}/{problem_id}.txt is action path. "<<endl;
         cerr<<"- output_dir: The result is saved to {output_dir}/{problem_id}.txt. input_dir=output_dir is ok. "<<endl;
         cerr<<"- mode: Four modes 0,1,2,3. 0: no change (validation). 1: simple. 2: normal. 3: heavy (requires large memory, openmp). "<<endl;
-        cerr<<"- problem_id: optional. "<<endl;
+        cerr<<"- length: optional. "<<endl;
+        cerr<<"- maxmovesize: optional. "<<endl;
         return 1;
     }
     string input_dir = (argv[1]);
     string output_dir = (argv[2]);
     int mode = atoi(argv[3]);
-    int problem_id = (argc==5) ? atoi(argv[4]) : -1;
+    int problem_id = (argc>=5) ? atoi(argv[4]) : -1;
+    int length = (argc>=6) ? atoi(argv[5]) : 50;
+    int maxmovesize = (argc>=7) ? atoi(argv[6]) : 100;
 
     ChronoTimer timer;
     int case_num = 398;
@@ -3434,8 +3437,8 @@ int main(int argc, char *argv[]){
             mode,
             TARGET[puzzle_type].first, // このステップ先まで候補生成
             100, // このステップ先まで合流可能か確認
-            50, // 移動チェックする合成操作の最大長
-            100, // 最大移動サイズ
+            length, // 移動チェックする合成操作の最大長
+            maxmovesize, // 最大移動サイズ
             20, // 削除チェックする最大長
             0, // 平行な複数動作を他を動かすことで実現する基準
             TARGET[puzzle_type].second, // 回転考慮

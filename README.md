@@ -16,7 +16,7 @@
 ## 解の圧縮
 ```bash
 make
-./heuristic.exe input_dir output_dir mode [problem_id]
+./heuristic.exe input_dir output_dir mode [problem_id length maxmovesize]
 ```
 - input_dir:  圧縮元フォルダ。{input_dir}/{problem_id}.txtに解が保存されている必要がある
 - output_dir: 出力先フォルダ。{output_dir}/{problem_id}.txtに解を保存。フォルダは事前に作っておく必要あり。input_dir=output_dirでもよい
@@ -27,6 +27,8 @@ make
     - 3: 重い処理。dual_greedy_improve。問題によってはメモリバク食いかつCPUフル稼働で激重。openmp必要。
     - 基本は、1実行後、2を実施すればOK。3は軽いものに絞るかベスト解のみに適用がおすすめ。
 - problem_id: 圧縮したい問題ID。ない場合は全部圧縮。
+- length: 移動する操作列最大長。デフォ50。
+- maxmovesize: 移動する最大幅。デフォ100。
 
 例
 ```bash
