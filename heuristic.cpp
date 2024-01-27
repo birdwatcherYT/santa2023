@@ -2499,15 +2499,30 @@ VI rotate_skip(const VI& action){
     return result.size()<action.size() ? result : action;
 }
 
+// tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF, const optional<VVI> &cache=nullopt){
 tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0, int end=INF){
     VI index(state_length);
     ARANGE(index);
 
-    auto state=init_state;
-    VVI states{state};
-    REP(i, SZ(actions)){
-        state=do_action(state, actions[i]);
-        states.emplace_back(state);
+    // auto tempfunc=[&](){
+    //     VVI states;
+    //     states.emplace_back(init_state);
+    //     auto state=init_state;
+    //     REP(i, SZ(actions)){
+    //         state=do_action(state, actions[i]);
+    //         states.emplace_back(state);
+    //     }
+    //     return states;
+    // };
+
+    // const VVI &states=cache? cache.value() : tempfunc();
+    VVI states{init_state};
+    {
+        auto state=init_state;
+        REP(i, SZ(actions)){
+            state=do_action(state, actions[i]);
+            states.emplace_back(state);
+        }
     }
 
     VI result;
@@ -2564,7 +2579,6 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         result=cancel_opposite_loop(result);
                         OUT("improve front1!", sz-SZ(result));
                         if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
-                        state=s1;
                         i+=len1+len2;
                         update=true;
                         next_end=i;
@@ -2589,7 +2603,6 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         result=cancel_opposite_loop(result);
                         OUT("improve front2!", sz-SZ(result));
                         if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
-                        state=s1;
                         i+=len1+len2;
                         update=true;
                         next_end=i;
@@ -2614,7 +2627,6 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
                         result=cancel_opposite_loop(result);
                         OUT("improve back!", sz-SZ(result));
                         if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
-                        state=states[j];
                         i=j;
                         update=true;
                         next_end=i;
@@ -2626,7 +2638,6 @@ tuple<VI, int, int> find_move(const VI& init_state, const VI &actions, int lengt
         }
         if(!update){
             result.emplace_back(actions[i]);
-            state=do_action(state, actions[i]);
             ++i;
         }
     }
@@ -2657,24 +2668,46 @@ VI find_move_loop(const string &output_filename, const VI& actions, int maxlengt
     return inverse? inverse_action(result) : result;
 }
 
-// VI climbing(const string &output_filename, const VI& actions, int loopnum){
-//     VI result=actions;
+// VI climbing(const string &output_filename, const VI& actions, int loopnum, int length, int maxmovesize){
+//     auto initial_state_inv = simulation(initial_state, actions);
+
+//     auto result=actions;
+//     auto result_inv = inverse_action(actions);
+
+//     VVI states, states_inv;
+//     auto update_states=[&](){
+//         states.clear(); states_inv.clear();
+//         auto state=initial_state;
+//         states.emplace_back(state);
+//         REP(i, SZ(result)){
+//             state=do_action(state, result[i]);
+//             states.emplace_back(state);
+//         }
+//         states_inv.insert(states_inv.end(), states.rbegin(), states.rend());
+//     };
+//     update_states();
 
 //     REP(loop, loopnum){
-//         if(loop%100==0)OUT(loop,"/",loopnum);
+//         dump(loop)
 //         int pos=get_rand(SZ(result));
-//         int length=get_rand(3, 100);
-//         int maxmovewidth=1000;
+//         // int length=get_rand(1, 200);
+//         // int maxmovesize=5000;
+//         int inv=get_rand(2);
 //         int size=SZ(result);
 
+//         auto temp=get<0>(find_move(inv ? initial_state_inv : initial_state, result, length, maxmovesize, pos, pos+1, inv ? states_inv : states));
 
-//         if(SZ(result)>=size)continue;
+//         if(SZ(temp)>=size)continue;
+
+//         if(inv) result_inv=temp, result = inverse_action(temp);
+//         else result=temp, result_inv = inverse_action(temp);
 
 //         dump(SZ(result))
 //         int mistake = get_mistakes(simulation(initial_state, result));
 //         assert(mistake<=num_wildcards);
 //         OUT("saved", size, "->", SZ(result));
 //         save_actions(output_filename, result);
+//         update_states();
 //     }
 //     return result;
 // }
@@ -2917,7 +2950,8 @@ int compression(
             // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
             // result = greedy_improve(result, depth);
         // }CASE 4:{
-        //     update_database(result);
+        //     // update_database(result);
+        //     climbing(output_filename, result, 10000, maxlength, maxmovesize);
         }DEFAULT:{
             cerr<<"unsupported mode: "<<mode<<endl;
             exit(1);
