@@ -1949,6 +1949,8 @@ VI cancel_opposite_loop(const VI& actions){
     return result;
 }
 
+
+
 void generate_all(deque<int>& actions, const VI &index, int maxdepth, 
              ZobristHashing<uint64_t> &zhash, unordered_map<uint64_t, set<pair<int, deque<int>>>> &bestaction){
     if(SZ(actions)>maxdepth)return;
@@ -2497,12 +2499,11 @@ VI rotate_skip(const VI& action){
     return result.size()<action.size() ? result : action;
 }
 
-pair<VI, int> find_move(const VI &actions, int length, int movesize, int start=0){
-// VI find_swap(const VI &actions, int length, bool run_summerize_rotate){
+pair<VI, int> find_move(const VI& init_state, const VI &actions, int length, int movesize, int start=0){
     VI index(state_length);
     ARANGE(index);
 
-    auto state=initial_state;
+    auto state=init_state;
     VVI states{state};
     REP(i, SZ(actions)){
         state=do_action(state, actions[i]);
@@ -2536,78 +2537,83 @@ pair<VI, int> find_move(const VI &actions, int length, int movesize, int start=0
                 int g2_front=get_group_id(a2.front());
                 int g1_back=get_group_id(a1.back());
                 int g2_back=get_group_id(a2.back());
-                if(!(a1!=a2 && (g1_front!=g2_front || g1_back!=g2_back || g1_front==g2_back)))
+                bool cond1=(!result.empty() && get_group_id(result.back())==g2_front);
+                bool cond2=(g1_front==g2_back);
+                bool cond3=(i+len1+len2<SZ(actions) && get_group_id(actions[i+len1+len2])==g1_back);
+                if(!(a1!=a2 && (cond1 || cond2 || cond3)))
                     continue;
                 //
                 const auto &s1=states[i+len1+len2];
                 auto s2=do_action(s2_tmp, op);
                 if(s1!=s2) continue;
-                // OUT("can swap", a1, a2);
-                if(g1_front==g2_back || (g1_front!=g2_front && !result.empty() && get_group_id(result.back())==g2_front)){
-                    auto tmp=result;
-                    tmp.insert(tmp.end(), a2.begin(), a2.end());
-                    tmp.insert(tmp.end(), a1.begin(), a1.end());
+                if(cond1){
+                    // resultの末尾とa2の先頭でキャンセルが起きるケース
+                    int j;
+                    for(j=SZ(result)-1; j>=0 && g2_front==get_group_id(result[j]); --j);
+                    VI tmp(result.begin()+j+1, result.end());
+                    for(j=0; j<SZ(a2) && get_group_id(result.back())==get_group_id(a2[j]); ++j)
+                        tmp.emplace_back(a2[j]);
+
                     int sz=SZ(tmp);
-                    tmp=cancel_opposite_loop(tmp);
+                    tmp=cancel_opposite(tmp);
                     if(SZ(tmp)<sz){
-                        OUT("improve front!", sz-SZ(tmp));
-                        if(next_start<0)
-                            next_start = max(0, i-length-movesize-(sz-SZ(tmp)));
-                        
-                        result=tmp;
+                        result.insert(result.end(), a2.begin(), a2.end());
+                        result.insert(result.end(), a1.begin(), a1.end());
+                        sz=SZ(result);
+                        result=cancel_opposite_loop(result);
+                        OUT("improve front1!", sz-SZ(result));
+                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
                         state=s1;
                         i+=len1+len2;
                         update=true;
                         break;
                     }
-                    // else if(run_summerize_rotate){
-                    //     for(int j=i+len1+len2; j<SZ(actions); ++j)
-                    //         tmp.emplace_back(actions[j]);
-                    //     sz=SZ(tmp);
-                    //     tmp=summerize_rotate(tmp);
-                    //     if(SZ(tmp)<sz){
-                    //         OUT("improve front!!", sz-SZ(tmp));
-                    //         result=tmp;
-                    //         state=simulation(initial_state, result);
-                    //         i=SZ(actions);
-                    //         update=true;
-                    //         break;
-                    //     }
-                    // }
                 }
-                if(g1_back!=g2_back && i+len1+len2<SZ(actions) && get_group_id(actions[i+len1+len2])==g1_back){
-                    auto tmp=result;
-                    tmp.insert(tmp.end(), a2.begin(), a2.end());
-                    tmp.insert(tmp.end(), a1.begin(), a1.end());
+                if(cond2){
+                    // a2の末尾とa1の先頭でキャンセルが起きるケース
                     int j;
+                    for(j=SZ(a2)-1; j>=0 && g1_front==get_group_id(a2[j]); --j);
+                    VI tmp(a2.begin()+j+1, a2.end());
+                    for(j=0; j<SZ(a1) && g2_back==get_group_id(a1[j]); ++j)
+                        tmp.emplace_back(a1[j]);
+
+                    int sz=SZ(tmp);
+                    tmp=cancel_opposite(tmp);
+                    if(SZ(tmp)<sz){
+                        result.insert(result.end(), a2.begin(), a2.end());
+                        result.insert(result.end(), a1.begin(), a1.end());
+                        sz=SZ(result);
+                        result=cancel_opposite_loop(result);
+                        OUT("improve front2!", sz-SZ(result));
+                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        state=s1;
+                        i+=len1+len2;
+                        update=true;
+                        break;
+                    }
+                }
+                if(cond3){
+                    // a1の末尾とactionsの次でキャンセルが起きるケース
+                    int j;
+                    for(j=SZ(a1)-1; j>=0 && get_group_id(actions.front())==get_group_id(a1[j]); --j);
+                    VI tmp(a1.begin()+j+1, a1.end());
                     for(j=i+len1+len2; j<SZ(actions) && g1_back==get_group_id(actions[j]); ++j)
                         tmp.emplace_back(actions[j]);
                     int sz=SZ(tmp);
-                    tmp=cancel_opposite_loop(tmp);
+                    tmp=cancel_opposite(tmp);
                     if(SZ(tmp)<sz){
-                        OUT("improve back!", sz-SZ(tmp));
-                        if(next_start<0)
-                            next_start = max(0, i-length-movesize);
-                        result=tmp;
-                        state=simulation(initial_state, result);
+                        result.insert(result.end(), a2.begin(), a2.end());
+                        result.insert(result.end(), a1.begin(), a1.end());
+                        result.insert(result.end(), actions.begin()+i+len1+len2, actions.begin()+j);
+                        sz=SZ(result);
+                        result=cancel_opposite_loop(result);
+                        OUT("improve back!", sz-SZ(result));
+                        if(next_start<0) next_start = max(0, i-length-movesize-(sz-SZ(result)));
+                        state=states[j];
                         i=j;
                         update=true;
                         break;
                     }
-                    // else if(run_summerize_rotate){
-                    //     for(; j<SZ(actions); ++j)
-                    //         tmp.emplace_back(actions[j]);
-                    //     sz=SZ(tmp);
-                    //     tmp=summerize_rotate(tmp);
-                    //     if(SZ(tmp)<sz){
-                    //         OUT("improve back!!", sz-SZ(tmp));
-                    //         result=tmp;
-                    //         state=simulation(initial_state, result);
-                    //         i=SZ(actions);
-                    //         update=true;
-                    //         break;
-                    //     }
-                    // }
                 }
             }
         }
@@ -2623,27 +2629,49 @@ pair<VI, int> find_move(const VI &actions, int length, int movesize, int start=0
 }
 
 
-VI find_move_loop(const string &output_filename, const VI& actions, int maxlength, int maxmovesize){
-// VI find_swap_loop(const string &output_filename, const VI& actions, int swap_search_length){
-    VI result=actions;
+VI find_move_loop(const string &output_filename, const VI& actions, int maxlength, int maxmovesize, bool inverse=false){
+    auto result = inverse? inverse_action(actions) : actions;
+    auto init_state = inverse ? simulation(initial_state, actions): initial_state;
+
     int size;
     int next_start=0;
     do{
         size=SZ(result);
-        tie(result,next_start)=find_move(result, maxlength, maxmovesize, next_start);
-        // result=find_swap(result, swap_search_length, false);
-        // result=find_swap(result, swap_search_length, true);
+        tie(result,next_start)=find_move(init_state, result, maxlength, maxmovesize, next_start);
 
         dump(SZ(result))
-        int mistake = get_mistakes(simulation(initial_state, result));
+        int mistake = get_mistakes(simulation(initial_state, inverse ? inverse_action(result) : result));
         assert(mistake<=num_wildcards);
         if(SZ(result)<size){
             OUT("saved", size, "->", SZ(result));
-            save_actions(output_filename, result);
+            save_actions(output_filename, inverse ? inverse_action(result) : result);
         }
     }while(SZ(result)<size);
-    return result;
+    return inverse? inverse_action(result) : result;
 }
+
+// VI climbing(const string &output_filename, const VI& actions, int loopnum){
+//     VI result=actions;
+
+//     REP(loop, loopnum){
+//         if(loop%100==0)OUT(loop,"/",loopnum);
+//         int pos=get_rand(SZ(result));
+//         int length=get_rand(3, 100);
+//         int maxmovewidth=1000;
+//         int size=SZ(result);
+
+
+//         if(SZ(result)>=size)continue;
+
+//         dump(SZ(result))
+//         int mistake = get_mistakes(simulation(initial_state, result));
+//         assert(mistake<=num_wildcards);
+//         OUT("saved", size, "->", SZ(result));
+//         save_actions(output_filename, result);
+//     }
+//     return result;
+// }
+
 
 // unordered_map<uint64_t, VI> load_database(){
 //     string filename="database/"+kind+"_"+to_string(X)+"_"+to_string(Y)+".txt";
@@ -2873,8 +2901,10 @@ int compression(
             // // result = kstep_replace(result, depth, false);
         }CASE 2:{
             result = delete_for_wildcard(result, delete_length);
-            // result = find_swap_loop(output_filename, result, swap_search_length);
-            result = find_move_loop(output_filename, result, maxlength, maxmovesize);
+            // 順方向
+            result = find_move_loop(output_filename, result, maxlength, maxmovesize, false);
+            // 逆方向への移動
+            result = find_move_loop(output_filename, result, maxlength, maxmovesize, true);
         }CASE 3:{
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
             // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
