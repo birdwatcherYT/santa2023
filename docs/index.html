@@ -9,7 +9,7 @@
     <link rel="stylesheet" type="text/css" href="https://birdwatcheryt.github.io/footer.css">
     <style>
         button{
-            padding: 5px;
+            padding: 10px;
         }
         td{
             text-align: center;
@@ -19,34 +19,68 @@
 
 <body>
     <h1>Santa2023 cube</h1>
-    <p>initial_state: <input id="initial_state" size="100" value="D;E;D;A;E;B;A;B;C;A;C;A;D;C;D;F;F;F;E;E;B;F;B;C" />
+    <p>problem_id: 
+        <select id="problem_id" onchange="change_problem();">
+            <option value="">--</option>
+        </select>
+        ゴール状態をinitial_stateに設定
+        <input type="checkbox" id="use_solution_state" onchange="change_problem();"/>
     </p>
-    <!-- <p>solution_state: <input id="solution_state" size="100" value="A;A;A;A;B;B;B;B;C;C;C;C;D;D;D;D;E;E;E;E;F;F;F;F" /> -->
-    <!-- </p> -->
-    <p>moves: <input id="moves" size="100" /></p>
+    <p>initial_state: <input id="initial_state" size="100" value="" />
+    </p>
+    <p>moves: <input id="moves" size="100" />
+        <button onclick="del_action()">Pop</button>
+    </p>
     <p>
-        <button onclick="apply()">描画</button>
-        <button onclick="del_action()">1アクション削除</button>
+        <!-- <button onclick="apply()">描画</button> -->
         描画されたアクションをクリックするとmovesに追加されます
     </p>
     <p>current_state: <input id="current_state" size="100" readonly /></p>
-    <!-- <p>n: <input id="n" size="3" readonly /></p> -->
     <div id="output"></div>
     <script src="cube.js"></script>
     <script>
+        function init(){
+            const selector = document.getElementById("problem_id");
+            for(let i=0;i<problems.length; ++i){
+                const opt = document.createElement("option");
+                opt.value = i; opt.text = i;
+                selector.add(opt);
+            }
+
+            const moves = document.getElementById("moves");
+            moves.addEventListener("keyup", (event) => {
+                apply();
+            })
+
+            const initial_state = document.getElementById("initial_state");
+            initial_state.addEventListener("keyup", (event) => {
+                apply();
+            })
+        }
+        function change_problem(){
+            const initial_state = document.getElementById("initial_state");
+            const use_solution_state = document.getElementById("use_solution_state");
+            const selector = document.getElementById("problem_id");
+            initial_state.value = (selector.value=="") ? "" : problems[Number(selector.value)][1-use_solution_state.checked];
+            apply();
+        }
         function apply() {
-            const initial_state = document.getElementById("initial_state").value.split(";");
-            // const solution_state = document.getElementById("solution_state").value.split(";");
-            const moves = document.getElementById("moves").value.split(".");
+            const initial_state = document.getElementById("initial_state").value.trim().split(";");
+            const moves = document.getElementById("moves").value.trim().split(".");
             console.log("initial_state", initial_state);
-            // console.log("solution_state", solution_state);
             console.log("moves", moves);
+
+            const msg=validation(initial_state, moves);
+            if (msg){
+                document.getElementById("output").innerHTML=`<font color="red">${msg}</font>`;
+                return ;
+            }
 
             const current_state = simulate(initial_state, moves);
             document.getElementById("current_state").value = current_state.join(";");
-            // document.getElementById("n").value = to_n(initial_state);
             document.getElementById("output").innerHTML = get_table(current_state);
         }
+        init();
     </script>
     <footer></footer>
 </body>
