@@ -2103,10 +2103,11 @@ VI kstep_replace(const VI &action, int k){
                     break;
                 }else if(length==get<0>(it->second)){
                     auto path=construct_actions(0, it->first, to_shortest);
-                    bool same=true;
-                    REP(k, length)if(get_group_id(action[i+k])!=get_group_id(action[path[k]]))
-                        same=false;
-                    if(!same){
+                    // bool same=true;
+                    // REP(k, length)if(get_group_id(action[i+k])!=get_group_id(action[path[k]]))
+                    //     same=false;
+                    // if(!same)
+                    {
                         // OUT("another group expression");
                         if(i!=0 && get_group_id(action[i-1])==get_group_id(path.front())){
                             auto tmp=result;
@@ -2121,7 +2122,7 @@ VI kstep_replace(const VI &action, int k){
                                 break;
                             }
                         }
-                        if(j+1<SZ(action) && get_group_id(path.back())!=get_group_id(action[j]) && get_group_id(path.back())==get_group_id(action[j+1])){
+                        if(j+1<SZ(action) && get_group_id(path.back())==get_group_id(action[j+1])){
                             auto tmp=result;
                             tmp.insert(tmp.end(), path.begin(), path.end());
                             int k=j+1;
@@ -2931,6 +2932,26 @@ VI delete_for_wildcard(const VI& actions, int length){
     return result;
 }
 
+VI delete_inverse(const VI &actions, int checknum=1000){
+    if(num_wildcards==0)return actions;
+    auto result=actions;
+    REP(i, SZ(result)){
+        dump(i)
+        int inv_act = inverse(result[i]);
+        int cnt=0;
+        FOR(j, i+1, SZ(result))if(result[j]==inv_act){
+            auto temp=result;
+            temp.erase(temp.begin()+j);
+            temp.erase(temp.begin()+i);
+            int mistake=get_mistakes(simulation(initial_state, temp));
+            if(mistake<=num_wildcards)
+                result=temp;
+            if(++cnt==checknum)break;
+        }
+    }
+    return result;
+}
+
 // 解の圧縮
 int compression(
     const string &input_filename, 
@@ -2957,12 +2978,13 @@ int compression(
         }CASE 1:{
             result = wildcard_finish(result);
             result = same_state_skip(result);
+            // result = delete_inverse(result);
             result = cancel_opposite_loop(result);
             if(can_rotate){
                 result = rotate_skip(result);
                 result = summerize_rotate(result, rotate_intercept);
             }
-            result = loop_compress(result);
+            // result = loop_compress(result);
             // result = shorter_subactions(result);
             // result = kstep_replace(result, depth);
             // // result = kstep_replace(result, depth, true);

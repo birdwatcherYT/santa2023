@@ -8,23 +8,33 @@
     <link rel="icon" href="https://birdwatcheryt.github.io/image/icon.ico">
     <link rel="stylesheet" type="text/css" href="https://birdwatcheryt.github.io/footer.css">
     <style>
-        button{
+        button {
             padding: 10px;
         }
-        td{
+
+        td {
             text-align: center;
+        }
+
+        .action {
+            cursor: pointer;
+        }
+
+        .action:hover {
+            color: #FF0000;
+            /* font-weight: bold; */
         }
     </style>
 </head>
 
 <body>
     <h1>Santa2023 cube</h1>
-    <p>problem_id: 
+    <p>problem_id:
         <select id="problem_id" onchange="change_problem();">
             <option value="">--</option>
         </select>
         ゴール状態をinitial_stateに設定
-        <input type="checkbox" id="use_solution_state" onchange="change_problem();"/>
+        <input type="checkbox" id="use_solution_state" onchange="change_problem();" />
     </p>
     <p>initial_state: <input id="initial_state" size="100" value="" />
     </p>
@@ -39,9 +49,9 @@
     <div id="output"></div>
     <script src="cube.js"></script>
     <script>
-        function init(){
+        function init() {
             const selector = document.getElementById("problem_id");
-            for(let i=0;i<problems.length; ++i){
+            for (let i = 0; i < problems.length; ++i) {
                 const opt = document.createElement("option");
                 opt.value = i; opt.text = i;
                 selector.add(opt);
@@ -50,18 +60,32 @@
             const moves = document.getElementById("moves");
             moves.addEventListener("keyup", (event) => {
                 apply();
-            })
+            });
 
             const initial_state = document.getElementById("initial_state");
             initial_state.addEventListener("keyup", (event) => {
                 apply();
-            })
+            });
+
+            const params = new URLSearchParams(location.search);
+            const use_solution_state = document.getElementById("use_solution_state");
+            if (params.has("use_solution_state"))
+                use_solution_state.checked = true;
+            if (params.has("problem_id")) {
+                selector.value = params.get("problem_id");
+                initial_state.value = (selector.value == "") ? "" : problems[Number(selector.value)][1 - use_solution_state.checked];
+            }
+            if (params.has("initial_state"))
+                initial_state.value = params.get("initial_state");
+            if (params.has("moves"))
+                moves.value = params.get("moves");
+            apply();
         }
-        function change_problem(){
+        function change_problem() {
             const initial_state = document.getElementById("initial_state");
             const use_solution_state = document.getElementById("use_solution_state");
             const selector = document.getElementById("problem_id");
-            initial_state.value = (selector.value=="") ? "" : problems[Number(selector.value)][1-use_solution_state.checked];
+            initial_state.value = (selector.value == "") ? "" : problems[Number(selector.value)][1 - use_solution_state.checked];
             apply();
         }
         function apply() {
@@ -70,10 +94,10 @@
             console.log("initial_state", initial_state);
             console.log("moves", moves);
 
-            const msg=validation(initial_state, moves);
-            if (msg){
-                document.getElementById("output").innerHTML=`<font color="red">${msg}</font>`;
-                return ;
+            const msg = validation(initial_state, moves);
+            if (msg) {
+                document.getElementById("output").innerHTML = `<font color="red">${msg}</font>`;
+                return;
             }
 
             const current_state = simulate(initial_state, moves);
