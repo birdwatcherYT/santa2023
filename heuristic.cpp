@@ -2697,6 +2697,237 @@ VI find_move_loop(const string &output_filename, const VI& actions, int maxlengt
     return inverse? inverse_action(result) : result;
 }
 
+// 同じグループをソートしてから行う前提
+VI magic_merge1(const VI &init_state, const VI& actions){
+    auto search_magic=[&](int i, int group_id){
+        // a, g, -a, -g
+        int a=actions[i];
+        int a_inv=inverse(a);
+        if(i+1>=SZ(actions))
+            return -1;
+        int j=i+1;
+        if(group_id<0)
+            group_id=get_group_id(actions[j]);
+        // i+1, ..., j-1 は同じグループ
+        for(; j<SZ(actions) && group_id==get_group_id(actions[j]); ++j);
+        if(j>=SZ(actions) || actions[j]!=a_inv)
+            return -1;
+        int len=j-(i+1);
+        if(len==0 || j+len>=SZ(actions))
+            return -1;
+        REP(l, len)if(actions[(i+1)+l]!=inverse(actions[(j+1)+l]))
+            return -1;
+        return j;
+    };
+
+    VVI states{init_state};
+    {
+        auto state=init_state;
+        REP(i, SZ(actions)){
+            state=do_action(state, actions[i]);
+            states.emplace_back(state);
+        }
+    }
+
+    VI result;
+    int i=0;
+    for(i=0;i< SZ(actions);){
+        int j = search_magic(i, -1);
+        // OUT("i", i, "j", j);
+        if(j<0){
+            result.emplace_back(actions[i++]);
+            continue;
+        }
+        int len = j-(i+1);
+        bool update=false;
+        for(int i2 = j+1+len;i2<SZ(actions);++i2)if(actions[i2]==actions[i]){
+            int j2 = search_magic(i2, get_group_id(actions[i+1]));
+            if(j2<0)continue;
+            int len2 = j2 - (i2+1);
+            // OUT("i", i, "j", j, "i2", i2, "j2", j2);
+
+            VI add;
+            add.insert(add.end(), actions.begin()+i, actions.begin()+j);
+            add.insert(add.end(), actions.begin()+i2+1, actions.begin()+j2);
+            add.insert(add.end(), actions.begin()+j, actions.begin()+j+1+len);
+            add.insert(add.end(), actions.begin()+j2+1, actions.begin()+j2+1+len2);
+            // 
+            add.insert(add.end(), actions.begin()+j+1+len, actions.begin()+i2);
+            
+            if(simulation(states[i], add)==states[j2+1+len2]){
+                OUT("improve merge1");
+                result.insert(result.end(), ALL(add));
+                i=j2+1+len2;
+                update=true;
+                break;
+            }
+        }
+        if(!update)
+            result.emplace_back(actions[i++]);
+    }
+    return result;
+}
+
+// 同じグループをソートしてから行う前提
+VI magic_merge2(const VI &init_state, const VI& actions){
+    auto search_magic=[&](int i, int group_id){
+        // g, a, -g, -a
+        int j=i;
+        if(group_id<0)
+            group_id=get_group_id(actions[j]);
+        // i, ..., j-1 は同じグループ
+        for(; j<SZ(actions) && group_id==get_group_id(actions[j]); ++j);
+        if(j>=SZ(actions))
+            return -1;
+        int a=actions[j];
+        int a_inv=inverse(a);
+        int len=j-i;
+        if(len==0 || j+len+1>=SZ(actions))
+            return -1;
+        REP(l, len)if(actions[i+l]!=inverse(actions[(j+1)+l]))
+            return -1;
+        if(actions[j+1+len]!=a_inv)
+            return -1;
+        return j;
+    };
+
+    VVI states{init_state};
+    {
+        auto state=init_state;
+        REP(i, SZ(actions)){
+            state=do_action(state, actions[i]);
+            states.emplace_back(state);
+        }
+    }
+
+    VI result;
+    int i=0;
+    for(i=0;i< SZ(actions);){
+        int j = search_magic(i, -1);
+        // OUT("i", i, "j", j);
+        if(j<0){
+            result.emplace_back(actions[i++]);
+            continue;
+        }
+        int len = j-i;
+        bool update=false;
+        for(int i2 = j+1+len+1;i2<SZ(actions);++i2){
+            int j2 = search_magic(i2, get_group_id(actions[i]));
+            if(j2<0 || actions[j]!=actions[j2])continue;
+            int len2 = j2 - i2;
+            // OUT("i", i, "j", j, "i2", i2, "j2", j2);
+
+            VI add;
+            add.insert(add.end(), actions.begin()+i, actions.begin()+j);
+            add.insert(add.end(), actions.begin()+i2, actions.begin()+j2);
+            add.insert(add.end(), actions.begin()+j, actions.begin()+j+1+len);
+            add.insert(add.end(), actions.begin()+j2+1, actions.begin()+j2+1+len2+1);
+            // 
+            add.insert(add.end(), actions.begin()+j+1+len+1, actions.begin()+i2);
+            
+            if(simulation(states[i], add)==states[j2+1+len2+1]){
+                OUT("improve merge2");
+                result.insert(result.end(), ALL(add));
+                i=j2+1+len2+1;
+                update=true;
+                break;
+            }
+        }
+        if(!update)
+            result.emplace_back(actions[i++]);
+    }
+    return result;
+}
+
+
+// 同じグループをソートしてから行う前提
+VI magic_merge3(const VI &init_state, const VI& actions){
+    auto search_magic=[&](int i){
+        if(i+8-1>=SZ(actions))return -1;
+        // A, B, C, -B, -A, B, -C, -B
+        int a=actions[i];
+        int b=actions[i+1];
+        int c=actions[i+2];
+        int a_inv=inverse(a);
+        int b_inv=inverse(b);
+        int c_inv=inverse(c);
+        if(actions[i+3]!=b_inv)return -1;
+        if(actions[i+4]!=a_inv)return -1;
+        if(actions[i+5]!=b)return -1;
+        if(actions[i+6]!=c_inv)return -1;
+        if(actions[i+7]!=b_inv)return -1;
+        return i+8;
+    };
+
+    VVI states{init_state};
+    {
+        auto state=init_state;
+        REP(i, SZ(actions)){
+            state=do_action(state, actions[i]);
+            states.emplace_back(state);
+        }
+    }
+
+    VI result;
+    int i=0;
+    for(i=0;i< SZ(actions);){
+        int j = search_magic(i);
+        // OUT("i", i, "j", j);
+        if(j<0){
+            result.emplace_back(actions[i++]);
+            continue;
+        }
+        bool update=false;
+        for(int i2 = j;i2<SZ(actions);++i2)if(actions[i2]==actions[i]){
+            int j2 = search_magic(i2);
+            // OUT("i", i, "j", j, "i2", i2, "j2", j2);
+            if(j2<0)continue;
+            if(actions[i]!=actions[i2] || actions[i+2]!=actions[i2+2] || actions[i+4]!=actions[i2+4] || actions[i+6]!=actions[i+6])continue;
+
+            VI add{actions[i], actions[i+2], actions[i+4], actions[i+6]};
+            // 
+            add.insert(add.end(), actions.begin()+j, actions.begin()+i2);
+            
+            if(simulation(states[i], add)==states[j2]){
+                OUT("improve merge3");
+                result.insert(result.end(), ALL(add));
+                i=j2;
+                update=true;
+                break;
+            }
+        }
+        if(!update)
+            result.emplace_back(actions[i++]);
+    }
+    return result;
+}
+
+VI magic_merge_loop(const VI& actions, bool inverse=false){
+    auto result = inverse? inverse_action(actions) : actions;
+    auto init_state = inverse ? simulation(initial_state, actions): initial_state;
+    
+    unordered_set<int> skipindex;
+
+    // result=cancel_opposite_loop(result);
+    int size;
+    do{
+        size=SZ(result);
+        result=magic_merge1(init_state, result);
+        result=cancel_opposite_loop(result);
+        result=magic_merge2(init_state, result);
+        result=cancel_opposite_loop(result);
+        result=magic_merge3(init_state, result);
+        result=cancel_opposite_loop(result);
+
+        // dump(SZ(result))
+        // int mistake = get_mistakes(simulation(initial_state, inverse ? inverse_action(result) : result));
+        // assert(mistake<=num_wildcards);
+    }while(SZ(result)<size);
+    return inverse? inverse_action(result) : result;
+}
+
+
+
 // VI climbing(const string &output_filename, const VI& actions, int loopnum, int length, int maxmovesize){
 //     auto initial_state_inv = simulation(initial_state, actions);
 
@@ -2978,10 +3209,14 @@ int compression(
         }CASE 1:{
             result = wildcard_finish(result);
             result = same_state_skip(result);
-            // result = delete_inverse(result);
             result = cancel_opposite_loop(result);
+            // magic合成
+            OUT("magic_merge_loop");
+            result = magic_merge_loop(result, false);
+            result = magic_merge_loop(result, true);
             if(can_rotate){
                 result = rotate_skip(result);
+                OUT("summerize_rotate");
                 result = summerize_rotate(result, rotate_intercept);
             }
             // result = loop_compress(result);
@@ -2990,10 +3225,14 @@ int compression(
             // // result = kstep_replace(result, depth, true);
             // // result = kstep_replace(result, depth, false);
         }CASE 2:{
+            // 削除for wildcard
             result = delete_for_wildcard(result, delete_length);
+            // result = delete_inverse(result);
             // 順方向
+            OUT("find_move_loop forward");
             result = find_move_loop(output_filename, result, maxlength, maxmovesize, false);
             // 逆方向への移動
+            OUT("find_move_loop backward");
             result = find_move_loop(output_filename, result, maxlength, maxmovesize, true);
         }CASE 3:{
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
@@ -3514,6 +3753,12 @@ int main(int argc, char *argv[]){
         // best_search_step_width(output_filename, 4, 1000);
  
         // score = annealing(output_filename, INF, 100);
+
+        // VI index(state_length);ARANGE(index);
+        // magic_merge1(index, action_encode("f1.r2.-f1.-r2.f1.r3.-f1.-r3"));
+        // magic_merge2(index, action_encode("r2.f1.-r2.-f1.r3.f1.-r3.-f1"));
+        // magic_merge3(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
+        // return 0;
 
         score=compression(
             input_filename, 

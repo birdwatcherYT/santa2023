@@ -22,7 +22,7 @@ make
 - output_dir: 出力先フォルダ。{output_dir}/{problem_id}.txtに解を保存。フォルダは事前に作っておく必要あり。input_dir=output_dirでもよい
 - mode: 4つのモード 0,1,2,3. 
     - 0: 何もしない。解のバリデーションのみ。 
-    - 1: 単純な処理のみ。wildcard_finish/same_state_skip/cancel_opposite_loop/rotate_skip/summerize_rotate。
+    - 1: 単純な処理のみ。wildcard_finish/same_state_skip/cancel_opposite_loop/rotate_skip/summerize_rotate/magic_merge_loop。
     - 2: DELETEとMOVE処理のみ。delete_for_wildcard/find_move。
     - 3: 重い処理。dual_greedy_improve。問題によってはメモリバク食いかつCPUフル稼働で激重。openmp必要。
     - 基本は、1実行後、2を実施すればOK。3は軽いものに絞るかベスト解のみに適用がおすすめ。
