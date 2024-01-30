@@ -3167,7 +3167,7 @@ VI delete_inverse(const VI &actions, int checknum=1000){
     if(num_wildcards==0)return actions;
     auto result=actions;
     REP(i, SZ(result)){
-        dump(i)
+        if(i%10==0)OUT(i,"/",SZ(result));
         int inv_act = inverse(result[i]);
         int cnt=0;
         FOR(j, i+1, SZ(result))if(result[j]==inv_act){
@@ -3227,7 +3227,6 @@ int compression(
         }CASE 2:{
             // 削除for wildcard
             result = delete_for_wildcard(result, delete_length);
-            // result = delete_inverse(result);
             // 順方向
             OUT("find_move_loop forward");
             result = find_move_loop(output_filename, result, maxlength, maxmovesize, false);
@@ -3238,9 +3237,10 @@ int compression(
             result = dual_greedy_improve(result, min(depth, SZ(actions)), search_step, random_prune);
             // result = dual_greedy_improve_low_memory(result, min(depth, SZ(actions)), search_step);
             // result = greedy_improve(result, depth);
-        // }CASE 4:{
-        //     // update_database(result);
-        //     climbing(output_filename, result, 10000, maxlength, maxmovesize);
+        }CASE 4:{
+            // update_database(result);
+            // climbing(output_filename, result, 10000, maxlength, maxmovesize);
+            result = delete_inverse(result);
         }DEFAULT:{
             cerr<<"unsupported mode: "<<mode<<endl;
             exit(1);

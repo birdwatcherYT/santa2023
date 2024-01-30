@@ -25,6 +25,7 @@ make
     - 1: 単純な処理のみ。wildcard_finish/same_state_skip/cancel_opposite_loop/rotate_skip/summerize_rotate/magic_merge_loop。
     - 2: DELETEとMOVE処理のみ。delete_for_wildcard/find_move。
     - 3: 重い処理。dual_greedy_improve。問題によってはメモリバク食いかつCPUフル稼働で激重。openmp必要。
+    - 4: ワイルドカード削除対応(他への悪影響ありそうなので分離しておく)。delete_inverse
     - 基本は、1実行後、2を実施すればOK。3は軽いものに絞るかベスト解のみに適用がおすすめ。
 - problem_id: 圧縮したい問題ID。ない場合は全部圧縮。
 - length: 移動する操作列最大長。デフォ50。
