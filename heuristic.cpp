@@ -2826,6 +2826,17 @@ VI magic_merge3(const VI &init_state, const VI& actions){
     auto search_magic=[&](int i){
         if(i+8-1>=SZ(actions))return -1;
         // A, B, C, -B, -A, B, -C, -B
+
+        // f2.r0.d1.-r0.-f2.r0.-d1.-r0
+        // f2.-r5.d1.r5.-f2.-r5.-d1.r5
+        // =
+        // f2.d1.-f2.-d1
+
+        // f3.f2.r0.d1.-r0.-f3.-f2.r0.-d1.-r0
+        // f3.f2.-r5.d1.r5.-f3.-f2.-r5.-d1.r5
+        // =
+        // f3.f2.d1.-f3.-f2.-d1
+
         int a=actions[i];
         int b=actions[i+1];
         int c=actions[i+2];
@@ -2912,7 +2923,7 @@ VI magic_merge4(const VI &init_state, const VI& actions){
     // r2.r3.f5.d1.d4.-f5.-r2.-r3.f5.-d1.-d4.-f5
 
     // A P B -P -A P -B -P
-    auto search_magic=[&](int i, int groupA, int p, int groupB)->optional<tuple<VI,int,VI>>{
+    auto search_magic=[&](int i, int groupA, int p_base, int groupB)->optional<tuple<VI,int,VI>>{
         if(i+8-1>=SZ(actions))
             return nullopt;
         int j=i;
@@ -2922,10 +2933,9 @@ VI magic_merge4(const VI &init_state, const VI& actions){
             A.emplace_back(actions[j]);
         if(j>=SZ(actions) || A.empty())
             return nullopt;
-        // TODO: 面の回転操作である必要がある
         int P=actions[j++];
         int Pinv=inverse(P);
-        if(j>=SZ(actions) || (p>=0 && P!=p))
+        if(j>=SZ(actions) || (p_base>=0 && get_base_action(P)!=p_base))
             return nullopt;
         // 
         VI B;
@@ -2981,11 +2991,11 @@ VI magic_merge4(const VI &init_state, const VI& actions){
         int len = 2*SZ(A)+2*SZ(B)+4;
         bool update=false;
         for(int i2 = i+len;i2<SZ(actions);++i2){
-            auto res2 = search_magic(i2, get_group_id(A.front()), P, get_group_id(B.front()));
+            auto res2 = search_magic(i2, get_group_id(A.front()), get_base_action(P), get_group_id(B.front()));
             if(!res2) continue;
             const auto &[A2, P2, B2]=res2.value();
             int len2 = 2*SZ(A2)+2*SZ(B2)+4;
-            assert(P==P2);
+            assert(get_base_action(P)==get_base_action(P2));
             // dump(i2)
             // dump(action_decode(A2))
             // dump(action_decode(VI{P2}))
@@ -3916,6 +3926,8 @@ int main(int argc, char *argv[]){
         // magic_merge1(index, action_encode("f1.r2.-f1.-r2.f1.r3.-f1.-r3"));
         // magic_merge1(index, action_encode("r2.f1.-r2.-f1.r3.f1.-r3.-f1"));
         // magic_merge3(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
+        // magic_merge1(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
+        // magic_merge4(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
         // OUT(
         //     action_decode(
         //         cancel_opposite_loop(magic_merge4(
