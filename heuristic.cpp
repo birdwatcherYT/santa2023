@@ -2772,6 +2772,7 @@ VI magic_merge1(const VI &init_state, const VI& actions){
 VI magic_merge2(const VI &init_state, const VI& actions){
     auto search_magic=[&](int i, int group_id){
         // g, a, -g, -a
+        // TODO: aは複数列でもいいかも
         int j=i;
         if(group_id<0)
             group_id=get_group_id(actions[j]);
@@ -2902,6 +2903,182 @@ VI magic_merge3(const VI &init_state, const VI& actions){
     return result;
 }
 
+// 同じグループをソートしてから行う前提
+VI magic_merge4(const VI &init_state, const VI& actions){
+    // r1.-d5.r3.d5.-r1.-d5.-r3.d5
+    // r1.-d5.r4.d5.-r1.-d5.-r4.d5
+    // r1.-d5.r3.r4.d5.-r1.-d5.-r3.-r4.d5
+
+    // A B X -B -A B -X -B
+    // A B Y -B -A B -Y -B
+    // A B X Y -B -A B -X -Y -B
+    // X、Yは同じグループ
+    // Aは、複数系列でもよいが同じグループであること
+    // Bは面回転操作だが、長さ1に絞らないほうがいいかも
+
+    // r3.f5.d4.-f5.-r3.f5.-d4.-f5.
+    // r2.f5.d4.-f5.-r2.f5.-d4.-f5.
+    // r2.r3.f5.d4.-f5.-r2.-r3.f5.-d4.-f5
+
+    // X A B -A -X A -B -A
+    // Y A B -A -Y A -B -A
+    // X Y A B -A -X -Y A -B -A
+    // X、Yは同じグループ
+    // Aは、複数系列でもよいが同じグループであること
+    // Bは面回転操作だが、長さ1に絞らないほうがいいかも
+
+    // r2.r3.f5.d4.-f5.-r2.-r3.f5.-d4.-f5.
+    // r2.r3.f5.d1.-f5.-r2.-r3.f5.-d1.-f5
+    // r2.r3.f5.d1.d4.-f5.-r2.-r3.f5.-d1.-d4.-f5
+
+    // A P B -P -A P -B -P
+    auto search_magic=[&](int i, int groupA, int p, int groupB)->optional<tuple<VI,int,VI>>{
+        if(i+8-1>=SZ(actions))
+            return nullopt;
+        int j=i;
+        VI A;
+        if(groupA<0) groupA=get_group_id(actions[j]);
+        for(; j<SZ(actions) && groupA==get_group_id(actions[j]); ++j)
+            A.emplace_back(actions[j]);
+        if(j>=SZ(actions) || A.empty())
+            return nullopt;
+        // TODO: 面の回転操作である必要がある
+        int P=actions[j++];
+        int Pinv=inverse(P);
+        if(j>=SZ(actions) || (p>=0 && P!=p))
+            return nullopt;
+        // 
+        VI B;
+        if(groupB<0) groupB=get_group_id(actions[j]);
+        for(; j<SZ(actions) && groupB==get_group_id(actions[j]); ++j)
+            B.emplace_back(actions[j]);
+        if(j>=SZ(actions) || B.empty())
+            return nullopt;
+        // 
+        if(actions[j++]!=Pinv)
+            return nullopt;
+        auto Ainv = inverse_action(A);
+        REVERSE(Ainv);
+        for(int ainv: Ainv)if(j>=SZ(actions) || ainv!=actions[j++])
+            return nullopt;
+        if(j>=SZ(actions) || actions[j++]!=P)
+            return nullopt;
+        auto Binv = inverse_action(B);
+        REVERSE(Binv);
+        for(int binv: Binv)if(j>=SZ(actions) || binv!=actions[j++])
+            return nullopt;
+        if(j>=SZ(actions) || actions[j++]!=Pinv)
+            return nullopt;
+        return tuple<VI,int,VI>{A,P,B};
+    };
+
+    VVI states{init_state};
+    {
+        auto state=init_state;
+        REP(i, SZ(actions)){
+            state=do_action(state, actions[i]);
+            states.emplace_back(state);
+        }
+    }
+
+    VI result;
+    int i=0;
+    for(i=0;i< SZ(actions);){
+        auto res = search_magic(i, -1, -1, -1);
+        if(!res){
+            result.emplace_back(actions[i++]);
+            continue;
+        }
+        const auto &[A, P, B]=res.value();
+        // dump(i)
+        // dump(action_decode(A))
+        // dump(action_decode(VI{P}))
+        // dump(action_decode(B))
+        int Pinv=inverse(P);
+        auto Ainv=inverse_action(A);
+        auto Binv=inverse_action(B);
+        // A P B -P -A P -B -P
+        int len = 2*SZ(A)+2*SZ(B)+4;
+        bool update=false;
+        for(int i2 = i+len;i2<SZ(actions);++i2){
+            auto res2 = search_magic(i2, get_group_id(A.front()), P, get_group_id(B.front()));
+            if(!res2) continue;
+            const auto &[A2, P2, B2]=res2.value();
+            int len2 = 2*SZ(A2)+2*SZ(B2)+4;
+            assert(P==P2);
+            // dump(i2)
+            // dump(action_decode(A2))
+            // dump(action_decode(VI{P2}))
+            // dump(action_decode(B2))
+            VI add;
+            if(A==A2 && B==B2){
+                // 両方一致する場合
+                // r2.f5.d1.-f5.-r2.f5.-d1.-f5
+                // r2.f5.d1.-f5.-r2.f5.-d1.-f5
+                // =
+                // d1.f5.r2.-f5.-d1.f5.-r2.-f5
+
+                // r2.r3.f5.d4.-f5.-r2.-r3.f5.-d4.-f5
+                // inv
+                // d4.f5.r2.r3.-f5.-d4.f5.-r2.-r3.-f5
+                // または
+                // f5.d4.-f5.r3.r2.f5.-d4.-f5.-r3.-r2
+                add.insert(add.end(), ALL(B));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(A));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), ALL(Binv));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(Ainv));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }else if(A==A2){
+                // A P B -P -A P -B -P
+                // B側をマージする
+                auto B2inv=inverse_action(B2);
+                add.insert(add.end(), ALL(A));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(B));
+                add.insert(add.end(), ALL(B2));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), ALL(Ainv));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(Binv));
+                add.insert(add.end(), ALL(B2inv));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }else if(B==B2){
+                // A P B -P -A P -B -P
+                // A側をマージする
+                auto A2inv=inverse_action(A2);
+                add.insert(add.end(), ALL(A));
+                add.insert(add.end(), ALL(A2));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(B));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), ALL(Ainv));
+                add.insert(add.end(), ALL(A2inv));
+                add.emplace_back(P);
+                add.insert(add.end(), ALL(Binv));
+                add.emplace_back(Pinv);
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }
+
+            if(simulation(states[i], add)==states[i2+len2]){
+                OUT("improve merge4");
+                result.insert(result.end(), ALL(add));
+                i=i2+len2;
+                update=true;
+                break;
+            }
+
+        }
+        if(!update)
+            result.emplace_back(actions[i++]);
+    }
+    return result;
+}
+
 VI magic_merge_loop(const VI& actions, bool inverse=false){
     auto result = inverse? inverse_action(actions) : actions;
     auto init_state = inverse ? simulation(initial_state, actions): initial_state;
@@ -2917,6 +3094,8 @@ VI magic_merge_loop(const VI& actions, bool inverse=false){
         result=magic_merge2(init_state, result);
         result=cancel_opposite_loop(result);
         result=magic_merge3(init_state, result);
+        result=cancel_opposite_loop(result);
+        result=magic_merge4(init_state, result);
         result=cancel_opposite_loop(result);
 
         // dump(SZ(result))
@@ -3758,6 +3937,20 @@ int main(int argc, char *argv[]){
         // magic_merge1(index, action_encode("f1.r2.-f1.-r2.f1.r3.-f1.-r3"));
         // magic_merge2(index, action_encode("r2.f1.-r2.-f1.r3.f1.-r3.-f1"));
         // magic_merge3(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
+        // OUT(
+        //     action_decode(
+        //         cancel_opposite_loop(magic_merge4(
+        //             index,
+        //             cancel_opposite_loop(magic_merge4(
+        //                 index,
+        //                 cancel_opposite_loop(magic_merge4(
+        //                     index,
+        //                     cancel_opposite_loop(magic_merge4(index, action_encode("r2.f5.d1.-f5.-r2.f5.-d1.-f5.r3.f5.d4.-f5.-r3.f5.-d4.-f5.r2.f5.d4.-f5.-r2.f5.-d4.-f5.r3.f5.d1.-f5.-r3.f5.-d1.-f5")))
+        //                 ))
+        //             ))
+        //         ))
+        //     )
+        // );
         // return 0;
 
         score=compression(
