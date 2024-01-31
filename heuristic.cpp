@@ -2699,25 +2699,55 @@ VI find_move_loop(const string &output_filename, const VI& actions, int maxlengt
 
 // 同じグループをソートしてから行う前提
 VI magic_merge1(const VI &init_state, const VI& actions){
-    auto search_magic=[&](int i, int group_id){
-        // a, g, -a, -g
-        int a=actions[i];
-        int a_inv=inverse(a);
-        if(i+1>=SZ(actions))
-            return -1;
-        int j=i+1;
-        if(group_id<0)
-            group_id=get_group_id(actions[j]);
-        // i+1, ..., j-1 は同じグループ
-        for(; j<SZ(actions) && group_id==get_group_id(actions[j]); ++j);
-        if(j>=SZ(actions) || actions[j]!=a_inv)
-            return -1;
-        int len=j-(i+1);
-        if(len==0 || j+len>=SZ(actions))
-            return -1;
-        REP(l, len)if(actions[(i+1)+l]!=inverse(actions[(j+1)+l]))
-            return -1;
-        return j;
+    // f1.r2.-f1.-r2.
+    // f1.r3.-f1.-r3
+    // =
+    // f1.r2.r3.-f1.-r2.-r3
+
+    // f1.f2.r2.-f1.-f2.-r2.
+    // f4.r2.-f4.-r2
+    // =
+    // f1.f2.f4.r2.-f1.-f2.-f4.-r2
+
+    // A  X  -A  -X
+    // A  Y  -A  -Y
+    // =
+    // A X Y -A -X -Y
+
+    // X B -X -B
+    // Y B -Y -B
+    // =
+    // X Y B -X -Y -B
+
+    // X,Yは同じグループ(長さ1じゃなくてもよい)
+    auto search_magic=[&](int i, int groupA, int groupB) -> optional<tuple<VI,VI>> {
+        // A B -A -B
+        if(i+4-1>=SZ(actions))
+            return nullopt;
+        int j=i;
+        VI A;
+        if(groupA<0) groupA=get_group_id(actions[j]);
+        for(; j<SZ(actions) && groupA==get_group_id(actions[j]); ++j)
+            A.emplace_back(actions[j]);
+        if(j>=SZ(actions) || A.empty())
+            return nullopt;
+        // 
+        VI B;
+        if(groupB<0) groupB=get_group_id(actions[j]);
+        for(; j<SZ(actions) && groupB==get_group_id(actions[j]); ++j)
+            B.emplace_back(actions[j]);
+        if(j>=SZ(actions) || B.empty())
+            return nullopt;
+        // -A
+        auto Ainv = inverse_action(A);
+        REVERSE(Ainv);
+        for(int ainv: Ainv)if(j>=SZ(actions) || ainv!=actions[j++])
+            return nullopt;
+        auto Binv = inverse_action(B);
+        REVERSE(Binv);
+        for(int binv: Binv)if(j>=SZ(actions) || binv!=actions[j++])
+            return nullopt;
+        return tuple<VI,VI>{A,B};
     };
 
     VVI states{init_state};
@@ -2732,32 +2762,55 @@ VI magic_merge1(const VI &init_state, const VI& actions){
     VI result;
     int i=0;
     for(i=0;i< SZ(actions);){
-        int j = search_magic(i, -1);
-        // OUT("i", i, "j", j);
-        if(j<0){
+        auto res = search_magic(i, -1, -1);
+        if(!res){
             result.emplace_back(actions[i++]);
             continue;
         }
-        int len = j-(i+1);
+        const auto &[A, B]=res.value();
+        int len = SZ(A)*2+SZ(B)*2;
         bool update=false;
-        for(int i2 = j+1+len;i2<SZ(actions);++i2)if(actions[i2]==actions[i]){
-            int j2 = search_magic(i2, get_group_id(actions[i+1]));
-            if(j2<0)continue;
-            int len2 = j2 - (i2+1);
-            // OUT("i", i, "j", j, "i2", i2, "j2", j2);
-
-            VI add;
-            add.insert(add.end(), actions.begin()+i, actions.begin()+j);
-            add.insert(add.end(), actions.begin()+i2+1, actions.begin()+j2);
-            add.insert(add.end(), actions.begin()+j, actions.begin()+j+1+len);
-            add.insert(add.end(), actions.begin()+j2+1, actions.begin()+j2+1+len2);
-            // 
-            add.insert(add.end(), actions.begin()+j+1+len, actions.begin()+i2);
+        auto Ainv=inverse_action(A);
+        auto Binv=inverse_action(B);
+        for(int i2 = i+len;i2<SZ(actions);++i2){
+            auto res2 = search_magic(i2, get_group_id(A.front()), get_group_id(B.front()));
+            if(!res2)continue;
+            const auto &[A2, B2]=res2.value();
+            int len2 = 2*SZ(A2)+2*SZ(B2);
             
-            if(simulation(states[i], add)==states[j2+1+len2]){
+            VI add;
+            if(A==A2 && B==B2){
+                add.insert(add.end(), ALL(B));
+                add.insert(add.end(), ALL(A));
+                add.insert(add.end(), ALL(Binv));
+                add.insert(add.end(), ALL(Ainv));
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }else if(A==A2){
+                // A X Y -A -X -Y
+                auto B2inv=inverse_action(B2);
+                add.insert(add.end(), ALL(A));
+                add.insert(add.end(), ALL(B));
+                add.insert(add.end(), ALL(B2));
+                add.insert(add.end(), ALL(Ainv));
+                add.insert(add.end(), ALL(Binv));
+                add.insert(add.end(), ALL(B2inv));
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }else if(B==B2){
+                auto A2inv=inverse_action(A2);
+                add.insert(add.end(), ALL(A));
+                add.insert(add.end(), ALL(A2));
+                add.insert(add.end(), ALL(B));
+                add.insert(add.end(), ALL(Ainv));
+                add.insert(add.end(), ALL(A2inv));
+                add.insert(add.end(), ALL(Binv));
+                add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
+            }else
+                continue;
+            
+            if(simulation(states[i], add)==states[i2+len2]){
                 OUT("improve merge1");
                 result.insert(result.end(), ALL(add));
-                i=j2+1+len2;
+                i=i2+len2;
                 update=true;
                 break;
             }
@@ -2767,79 +2820,6 @@ VI magic_merge1(const VI &init_state, const VI& actions){
     }
     return result;
 }
-
-// 同じグループをソートしてから行う前提
-VI magic_merge2(const VI &init_state, const VI& actions){
-    auto search_magic=[&](int i, int group_id){
-        // g, a, -g, -a
-        // TODO: aは複数列でもいいかも
-        int j=i;
-        if(group_id<0)
-            group_id=get_group_id(actions[j]);
-        // i, ..., j-1 は同じグループ
-        for(; j<SZ(actions) && group_id==get_group_id(actions[j]); ++j);
-        if(j>=SZ(actions))
-            return -1;
-        int a=actions[j];
-        int a_inv=inverse(a);
-        int len=j-i;
-        if(len==0 || j+len+1>=SZ(actions))
-            return -1;
-        REP(l, len)if(actions[i+l]!=inverse(actions[(j+1)+l]))
-            return -1;
-        if(actions[j+1+len]!=a_inv)
-            return -1;
-        return j;
-    };
-
-    VVI states{init_state};
-    {
-        auto state=init_state;
-        REP(i, SZ(actions)){
-            state=do_action(state, actions[i]);
-            states.emplace_back(state);
-        }
-    }
-
-    VI result;
-    int i=0;
-    for(i=0;i< SZ(actions);){
-        int j = search_magic(i, -1);
-        // OUT("i", i, "j", j);
-        if(j<0){
-            result.emplace_back(actions[i++]);
-            continue;
-        }
-        int len = j-i;
-        bool update=false;
-        for(int i2 = j+1+len+1;i2<SZ(actions);++i2){
-            int j2 = search_magic(i2, get_group_id(actions[i]));
-            if(j2<0 || actions[j]!=actions[j2])continue;
-            int len2 = j2 - i2;
-            // OUT("i", i, "j", j, "i2", i2, "j2", j2);
-
-            VI add;
-            add.insert(add.end(), actions.begin()+i, actions.begin()+j);
-            add.insert(add.end(), actions.begin()+i2, actions.begin()+j2);
-            add.insert(add.end(), actions.begin()+j, actions.begin()+j+1+len);
-            add.insert(add.end(), actions.begin()+j2+1, actions.begin()+j2+1+len2+1);
-            // 
-            add.insert(add.end(), actions.begin()+j+1+len+1, actions.begin()+i2);
-            
-            if(simulation(states[i], add)==states[j2+1+len2+1]){
-                OUT("improve merge2");
-                result.insert(result.end(), ALL(add));
-                i=j2+1+len2+1;
-                update=true;
-                break;
-            }
-        }
-        if(!update)
-            result.emplace_back(actions[i++]);
-    }
-    return result;
-}
-
 
 // 同じグループをソートしてから行う前提
 VI magic_merge3(const VI &init_state, const VI& actions){
@@ -3062,7 +3042,8 @@ VI magic_merge4(const VI &init_state, const VI& actions){
                 add.insert(add.end(), ALL(Binv));
                 add.emplace_back(Pinv);
                 add.insert(add.end(), actions.begin()+i+len, actions.begin()+i2);
-            }
+            }else
+                continue;
 
             if(simulation(states[i], add)==states[i2+len2]){
                 OUT("improve merge4");
@@ -3090,8 +3071,6 @@ VI magic_merge_loop(const VI& actions, bool inverse=false){
     do{
         size=SZ(result);
         result=magic_merge1(init_state, result);
-        result=cancel_opposite_loop(result);
-        result=magic_merge2(init_state, result);
         result=cancel_opposite_loop(result);
         result=magic_merge3(init_state, result);
         result=cancel_opposite_loop(result);
@@ -3935,7 +3914,7 @@ int main(int argc, char *argv[]){
 
         // VI index(state_length);ARANGE(index);
         // magic_merge1(index, action_encode("f1.r2.-f1.-r2.f1.r3.-f1.-r3"));
-        // magic_merge2(index, action_encode("r2.f1.-r2.-f1.r3.f1.-r3.-f1"));
+        // magic_merge1(index, action_encode("r2.f1.-r2.-f1.r3.f1.-r3.-f1"));
         // magic_merge3(index, action_encode("f2.r0.d1.-r0.-f2.r0.-d1.-r0.f2.-r5.d1.r5.-f2.-r5.-d1.r5"));
         // OUT(
         //     action_decode(
